@@ -314,7 +314,9 @@ namespace mt
     template<typename Type>
     Type* getFullScreenModalPopUP()
     {
-        static std::vector<std::unique_ptr<Type>> _popups;
+        struct Pool final : juce::DeletedAtShutdown { std::vector<std::unique_ptr<Type>> popups; };
+        static auto* pool = new Pool;
+        auto& _popups = pool->popups;
         for( auto& it : _popups )
         {
             if( !it->isInUse.load() )

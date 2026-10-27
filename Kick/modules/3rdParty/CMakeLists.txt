@@ -2,7 +2,6 @@
 juce_add_modules(
     dywapitchtrack
     fpm
-    juce_serialport
     magic_enum
     melatonin_parameters
     moodycamel

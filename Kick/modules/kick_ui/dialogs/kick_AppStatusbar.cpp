@@ -18,8 +18,10 @@ namespace kick_ui
 
     AppStatusbar& AppStatusbar::Instance()
     {
-        static AppStatusbar _instance;
-        return _instance;
+        // Register the shared look-and-feel before this dependent component.
+        ui::KickLooknFeel::getLnf();
+        static auto* instance = new AppStatusbar;
+        return *instance;
     };
 
     AppStatusbar::AppStatusbar()

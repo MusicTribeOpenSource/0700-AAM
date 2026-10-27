@@ -19,7 +19,7 @@ namespace ui
         void resized() override;
     };
 
-    class KickVirtualKeyBoard : public juce::Component
+    class KickVirtualKeyBoard : public juce::Component, public juce::DeletedAtShutdown
     {
     public:
         std::function<void( int )> onEnterPressed = []( int ) {};

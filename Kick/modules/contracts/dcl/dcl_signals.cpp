@@ -20,7 +20,9 @@
  */
 
 #include "dcl_signals.h"
-#include "ipc/utils/mt_ipc_json.h"
+#include "dcl_contracts_helper.h"
+#include <juce_events/juce_events.h>
+#include <algorithm>
 
 namespace contracts
 {
@@ -29,4 +31,29 @@ namespace contracts
     sigslot::signal<CPktMgr::HWMsg_t&>               DclSignals::hardwareInputTriggered    = {};
     sigslot::signal<>                                DclSignals::refreshPadLeds            = {};
     sigslot::signal<int>                             DclSignals::onMainModeTabSelected     = {};
+}
+
+namespace contracts {
+namespace { std::vector<std::weak_ptr<DclSignals::HardwareInputOwner>> inputOwners; }
+DclSignals::HardwareInputLease DclSignals::claimHardwareInput(std::function<bool(CPktMgr::HWMsg_t&)> consume) {
+    jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
+    auto owner = std::make_shared<HardwareInputOwner>(); owner->consume = std::move(consume);
+    inputOwners.erase(std::remove_if(inputOwners.begin(), inputOwners.end(), [](const auto& p) { return p.expired(); }), inputOwners.end());
+    inputOwners.push_back(owner);
+    return owner;
+}
+void DclSignals::dispatchHardwareInput(CPktMgr::HWMsg_t& message) {
+    if (!DclContractsHelper::isValidHardwareInput(message)) return;
+    if (!juce::MessageManager::getInstance()->isThisTheMessageThread()) {
+        juce::MessageManager::callAsync([copy = message]() mutable { dispatchHardwareInput(copy); });
+        return;
+    }
+    if (DclContractsHelper::isButtonMessage(message) && DclContractsHelper::getButtonCode(message) == DeviceControlContracts::EN_SHIFT)
+        shiftBtnState.store(DclContractsHelper::getButtonState(message) != DeviceControlContracts::BTN_RELEASED);
+    // Copy weak leases: callbacks may open/close dialogs while dispatching.
+    const auto owners = inputOwners;
+    for (auto it = owners.rbegin(); it != owners.rend(); ++it)
+        if (auto owner = it->lock()) if (owner->consume && owner->consume(message)) return;
+    hardwareInputTriggered(message);
+}
 }

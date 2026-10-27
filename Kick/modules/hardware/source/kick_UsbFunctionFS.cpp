@@ -1,3 +1,4 @@
+#include "kick_HardwareMode.h"
 
 /*
  * Copyright (c) 2021 MUSIC Tribe
@@ -73,6 +74,7 @@ namespace mt
 
     void USBFunctionFS::init()
     {
+        if (!hardwareEnabled()) return;
         const juce::String& usbFilePath = "/dev/usb-utp0/ep0";
         juce::String        epSinkPath  = usbFilePath.substring( 0, usbFilePath.length() - 1 ) + "1";
         g_ep_write                      = openFileDescriptor( epSinkPath );

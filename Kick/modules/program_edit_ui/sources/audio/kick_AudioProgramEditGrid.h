@@ -7,7 +7,7 @@ namespace kick_ui
     class AudioProgramGrid;
     class AudioGridComponent;
 
-    class AudioGridData : public mt::MTAudioInterfaceListener
+    class AudioGridData : public mt::MTAudioInterfaceListener, public juce::DeletedAtShutdown
     {
         SIGNALS : sigslot::signal<> audioGridChanged;
         SIGNALS : sigslot::signal<> audioGridPlayHeadChanged;
@@ -20,8 +20,8 @@ namespace kick_ui
 
         static AudioGridData& Instance()
         {
-            static AudioGridData _instance;
-            return _instance;
+            static auto* instance = new AudioGridData;
+            return *instance;
         }
 
         // Refresh all data.

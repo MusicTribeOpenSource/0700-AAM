@@ -32,6 +32,7 @@ namespace mt
         class LoadAnimation
             : public juce::Component
             , protected juce::Timer
+            , public juce::DeletedAtShutdown
         {
         public:
             std::function<void( bool )> onAnimationEnd;
@@ -39,8 +40,8 @@ namespace mt
             ~LoadAnimation();
             static LoadAnimation& getInstance()
             {
-                static LoadAnimation LoadAnimation;
-                return LoadAnimation;
+                static auto* instance = new LoadAnimation;
+                return *instance;
             }
 
             inline bool isAnimationRunning() { return isAnimating.load(); };
@@ -56,7 +57,8 @@ namespace mt
             void paint( juce::Graphics& ) override;
 
         private:
-            static std::vector<juce::Image> gifImages;
+            struct Frames { std::vector<juce::Image> images; };
+            juce::SharedResourcePointer<Frames> frames;
             std::atomic<bool>               isAnimating{ false };
             std::atomic<int>                id{ 0 };
             fsPopup*                        popup{ nullptr };

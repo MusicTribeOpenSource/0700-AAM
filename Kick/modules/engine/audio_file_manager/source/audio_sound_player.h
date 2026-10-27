@@ -47,7 +47,7 @@ namespace mt
 
     private:
         juce::AudioFormatManager audioFmtMgr;
-        ASound                   sound{ "", audioFmtMgr, 1.f };
+        ASound::Ptr              sound{ new ASound("", audioFmtMgr, 1.f) };
         ASoundSlice              slice;
     };
 

@@ -9,3 +9,5 @@ juce_add_modules(
     project
 )
 
+target_link_libraries(audio_program INTERFACE kick_clap_juce)
+

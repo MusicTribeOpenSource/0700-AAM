@@ -505,9 +505,10 @@ namespace ui
 
     KickVirtualKeyBoard& KickVirtualKeyBoard::getWithText( const juce::String& InitalValue )
     {
-        static KickVirtualKeyBoard sInstance( "" );
-        sInstance.setInputText( InitalValue );
-        return sInstance;
+        KickLooknFeel::getLnf();
+        static auto* instance = new KickVirtualKeyBoard( "" );
+        instance->setInputText( InitalValue );
+        return *instance;
     }
 
     void KickVirtualKeyBoard::showKeyboard( Type type )

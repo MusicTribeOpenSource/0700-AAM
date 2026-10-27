@@ -10,6 +10,19 @@ CMake. See `AudIO/Example/` for usage.
 AudIO is licensed under the GNU Affero General Public License v3.0 or later, see [LICENSE](LICENSE).
 Bundled third-party code keeps its own license.
 
+## KICK JUCE integration
+
+`juce_modules.cmake` registers the AGPL `AudIO_constants` and `AudIO_juce` modules.
+`src/audio_core.cpp` compiles the released core/Airwindows once; the JUCE adapter
+adds an audio device, recorder/looper with overdub and one-level undo/redo, WAV
+export, ADSR and stereo filter adapters. The device uses a fixed-block pipeline
+with one graph block of added latency. Capture/preview and device adaptation are
+covered by `Kick/tests/platform`; the actual application is built in CI.
+
+The constants bridge supplies software defaults needed by the released UI; it
+does not recover the missing private library's exact hardware configuration.
+See [KICK build instructions](../Kick/README.md) for configuration and limitations.
+
 ## Removed from this release
 
 - The embedded General MIDI SoundFont (`AWE32_1MB.h`, copyright E-mu Systems). It is now an empty stub,

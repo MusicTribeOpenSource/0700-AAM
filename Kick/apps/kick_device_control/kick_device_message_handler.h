@@ -49,7 +49,7 @@ namespace kick
                                         std::weak_ptr<ipc::MTIPCMessageDispatcher> dispatcher )
             {
                 CPktMgr::HWMsg_t hwPacket;
-                contracts::DclContractsHelper::ipcMessageToHWMessage( message, hwPacket ); 
+                if (!contracts::DclContractsHelper::ipcMessageToHWMessage( message, hwPacket )) return;
                 Controls::InputEvents::sendMessageToHardware( hwPacket );
 
             };

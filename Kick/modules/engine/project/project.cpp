@@ -46,7 +46,7 @@ namespace mt
 
     void projectManager::rename( const juce::String& NewName )
     {
-        save();
+        if (!save()) return;
 
         juce::File       dir, project{ "" };
         juce::ScopedLock l( KickXML::getCriticalSection() );
@@ -67,6 +67,7 @@ namespace mt
     juce::ValueTree projectManager::loadOrCreate( const juce::File& XMLFIle )
     {
         auto tree = KickXML::loadOrCreate( XMLFIle );
+        if (!tree.isValid()) return {};
 
         bool HasProjectSubTree = tree.getChildWithName( IDs::Project ).isValid();
 

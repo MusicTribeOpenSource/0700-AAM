@@ -879,8 +879,6 @@ namespace kick_ui
             auto knob         = contracts::DclContractsHelper::getKnobCode( f_HwMsg );
             auto dir          = contracts::DclContractsHelper::getKnobDirection( f_HwMsg );
             auto value        = contracts::DclContractsHelper::getKnobValue( f_HwMsg );
-            auto lowerNibble  = f_HwMsg.data[2];
-            auto higherNibble = f_HwMsg.data[3];
 
             if( knob != contracts::DeviceControlContracts::KnobSequence::EN_KNOB_CENTER )
                 stepComponent.knobRotated( knob - 1, value );

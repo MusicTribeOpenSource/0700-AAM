@@ -23,8 +23,8 @@ namespace mt
 {
     KickSettings& getSettings()
     {
-        static KickSettings settingsInstance;
-        return settingsInstance;
+        static auto* settingsInstance = new KickSettings;
+        return *settingsInstance;
     }
 
     /// ///////////////////////////////////

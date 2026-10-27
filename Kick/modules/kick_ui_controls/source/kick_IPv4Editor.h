@@ -1,7 +1,7 @@
 #pragma once
 namespace ui
 {
-    class IPv4Editor : public juce::Component
+    class IPv4Editor : public juce::Component, public juce::DeletedAtShutdown
     {
     public:
         IPv4Editor();
@@ -9,8 +9,9 @@ namespace ui
 
         static IPv4Editor& Instance()
         {
-            static IPv4Editor iPv4;
-            return iPv4;
+            KickLooknFeel::getLnf();
+            static auto* iPv4 = new IPv4Editor;
+            return *iPv4;
         }
 
         juce::String       getIPAddressAsString() { return ipAddress; }

@@ -112,10 +112,12 @@ namespace mt
         // Project...
         virtual void onProjectLoaded( juce::File ) { ; }
         virtual void onProjectClose() { ; }
+        virtual void onProjectSaveFailed(const juce::String&) {}
+        virtual void onProjectDirtyChanged(bool) {}
     };
 
     class MTAudioInterface
-        : public MTLooperInterface
+        : public MTLooperInterface, public juce::DeletedAtShutdown
     {
     public:
         explicit MTAudioInterface( const char* Name, const char* Manufacturer, const char* Version );
@@ -130,6 +132,8 @@ namespace mt
         bool loadProject( juce::File& ProjectFile );
         bool closeProject();
         bool saveProject();
+        juce::String getProjectSaveError() const;
+        bool isProjectDirty() const;
 
         // Master API's....
         const int         getMasterBPM();

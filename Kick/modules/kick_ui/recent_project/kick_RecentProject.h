@@ -120,7 +120,7 @@ namespace ui
         std::function<void( void )>                     onAutoLoadClick;
 
         RecentProject();
-        ~RecentProject() = default;
+        ~RecentProject() override { ae.removeListener(this); }
         bool       canClose() override { return true; }
         bool       requiresControlBar() override { return false; }
         bool       requiresStatusBar() override { return false; }

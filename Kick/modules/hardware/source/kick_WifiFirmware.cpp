@@ -1,3 +1,4 @@
+#include "kick_HardwareMode.h"
 /*
  * Copyright (c) 2021 MUSIC Tribe
  *
@@ -42,6 +43,7 @@ namespace mt
 
     juce::String WifiManager::executeCommand( const juce::String& command )
     {
+        if (!hardwareEnabled()) return {};
         juce::ChildProcess process;
         process.start( command );
         process.waitForProcessToFinish( -1 );
@@ -50,8 +52,7 @@ namespace mt
 
     bool WifiManager::fileExists( const std::string& filename )
     {
-        struct stat buffer;
-        return ( stat( filename.c_str(), &buffer ) == 0 );
+        return juce::File(juce::String(filename)).existsAsFile();
     }
 
     std::map<std::string, std::string> WifiManager::loadWifiCredentials()
@@ -74,6 +75,7 @@ namespace mt
 
     void WifiManager::saveWifiCredential( const std::string& ssid, const std::string& password )
     {
+        if (!hardwareEnabled()) return;
         if( !fileExists( WIFI_CRED_FILE ) )
         {
             std::ofstream file( WIFI_CRED_FILE );
@@ -86,6 +88,7 @@ namespace mt
 
     const std::vector<juce::String> WifiManager::scanWiFiNetworks()
     {
+        if (!hardwareEnabled()) return {};
         juce::String                                      currentSSID;
         juce::String                                      currentFrequency;
         std::map<juce::String, std::vector<juce::String>> wifiNetworks;
@@ -205,6 +208,7 @@ namespace mt
 
     void WifiManager::addSSID( const juce::String& ssid, const juce::String& password, int priority )
     {
+        if (!hardwareEnabled()) return;
         if( !fileExists( WIFI_CONF_FILE ) )
         {
             std::ofstream file( WIFI_CONF_FILE );

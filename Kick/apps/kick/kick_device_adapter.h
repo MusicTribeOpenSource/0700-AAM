@@ -36,7 +36,7 @@ public:
     {
         Controls::InputEvents::initialize();
         auto handler = [&]( CPktMgr::HWMsg_t& f_HwMsg ) {
-            contracts::DclSignals::hardwareInputTriggered( f_HwMsg );
+            contracts::DclSignals::dispatchHardwareInput( f_HwMsg );
         };
 
         Controls::InputEvents::dispatchHardwareEvent.connect( handler );
@@ -56,7 +56,7 @@ public:
     {
         if( !message ) return;
         CPktMgr::HWMsg_t msg;
-        contracts::DclContractsHelper::ipcMessageToHWMessage( message, msg );
+        if (!contracts::DclContractsHelper::ipcMessageToHWMessage( message, msg )) return;
         /*juce::String log;
         log += "type " + juce::String( msg.pktType );
         log += " cmd " + juce::String( msg.pktCmd );

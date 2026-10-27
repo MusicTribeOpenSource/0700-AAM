@@ -2,13 +2,14 @@
 
 namespace ui
 {
-    class NoteSelectorEditor : public juce::Component
+    class NoteSelectorEditor : public juce::Component, public juce::DeletedAtShutdown
     {
     public:
         static NoteSelectorEditor& Instance()
         {
-            static NoteSelectorEditor noteSel;
-            return noteSel;
+            KickLooknFeel::getLnf();
+            static auto* noteSel = new NoteSelectorEditor;
+            return *noteSel;
         }
 
         NoteSelectorEditor();

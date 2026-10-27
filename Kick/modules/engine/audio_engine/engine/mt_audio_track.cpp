@@ -209,11 +209,13 @@ namespace mt
     void MTTrack::pause()
     {
         isPlaying = false;
+        if (auto* p = program.load()) p->updatePluginTransport(seq.getBPM(), double(tickPos) / defaultPPQN, false);
         stopAllMidiNotes();
     }
 
     void MTTrack::stop()
     {
+        if (auto* p = program.load()) p->updatePluginTransport(seq.getBPM(), 0, false);
         stopAllMidiNotes();
         isPlaying = false;
         trackPlayhead.clear();
@@ -370,6 +372,7 @@ namespace mt
 
         updateTrackPlayhead( tickPos );
         // add logic to compute normalized playhead position using lengthInTicks
+        pProgram->updatePluginTransport(seq.getBPM(), double(tickPos) / defaultPPQN, true);
         if( !midiMsgs.isEmpty() )
         {
             reloadMidiMeter( levelScaler );

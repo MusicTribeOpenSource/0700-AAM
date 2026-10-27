@@ -1,0 +1,88 @@
+name: CLAP host
+on:
+  push:
+    paths: ['Kick/**', 'AudIO/**', 'ComProtocol/**', '.github/workflows/clap-host.yml']
+  pull_request:
+    paths: ['Kick/**', 'AudIO/**', 'ComProtocol/**', '.github/workflows/clap-host.yml']
+permissions:
+  contents: read
+jobs:
+  core:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: gcc
+            cc: gcc
+            cxx: g++
+            type: Release
+            sanitize: 'OFF'
+          - compiler: gcc-sanitizers
+            cc: gcc
+            cxx: g++
+            type: Debug
+            sanitize: 'ON'
+          - compiler: clang-sanitizers
+            cc: clang
+            cxx: clang++
+            type: Debug
+            sanitize: 'ON'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        env:
+          CC: '${{ matrix.cc }}'
+          CXX: '${{ matrix.cxx }}'
+        run: cmake -S Kick -B build -DKICK_CLAP_HOST_ONLY=ON -DCMAKE_BUILD_TYPE=${{ matrix.type }} -DKICK_CLAP_SANITIZE=${{ matrix.sanitize }}
+      - run: cmake --build build --parallel 2
+      # Keep ASan defaults, including alloc-dealloc-mismatch detection.
+      - run: ctest --test-dir build --output-on-failure
+  juce:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        juce: ['7.0.12', '8.0.4']
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build and headless display dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libjack-jackd2-dev libx11-dev libxext-dev libxinerama-dev libxrandr-dev libxcursor-dev libfreetype-dev libfontconfig1-dev libxi-dev libgl1-mesa-dev xvfb xauth
+      - name: Fetch JUCE
+        run: git clone --depth 1 --branch ${{ matrix.juce }} https://github.com/juce-framework/JUCE.git /tmp/JUCE
+      - run: cmake -S Kick/clap_host -B build -DKICK_CLAP_BUILD_JUCE=ON -DKICK_CLAP_BUILD_PLAYER=ON -DKICK_CLAP_JUCE_PATH=/tmp/JUCE -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build --parallel 2
+      - run: xvfb-run -a ctest --test-dir build --output-on-failure
+
+  aarch64:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cross compiler and emulator
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user
+      - name: Configure target build
+        run: cmake -S Kick -B build-arm -DKICK_CLAP_HOST_ONLY=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/Kick/clap_host/cmake/aarch64-linux-gnu.cmake '-DCMAKE_CROSSCOMPILING_EMULATOR=qemu-aarch64;-L;/usr/aarch64-linux-gnu'
+      - run: cmake --build build-arm --parallel 2
+      # This fixture test does not exec a target scanner from within QEMU.
+      # Emulator results establish compatibility only, never hardware timing.
+      - run: ctest --test-dir build-arm -R '^kick-clap-benchmark$' --output-on-failure
+      - name: Smoke-test target report schema
+        run: |
+          qemu-aarch64 -L /usr/aarch64-linux-gnu build-arm/clap_host/kick-clap-bench --plugin build-arm/clap_host/tests/kick-clap-fixture-normal.clap --id org.kick.test.synth --seconds .05 --warmup 0 --output arm-smoke.json
+          python3 -c 'import json; r=json.load(open("arm-smoke.json")); assert r["completed"] and r["architecture"] == "aarch64"'
+
+  application:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install application build and display dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libjack-jackd2-dev libx11-dev libxext-dev libxinerama-dev libxrandr-dev libxcursor-dev libxi-dev libfreetype-dev libfontconfig1-dev libgl1-mesa-dev xvfb xauth
+      - name: Fetch application JUCE
+        run: git clone --depth 1 --branch 7.0.12 https://github.com/juce-framework/JUCE.git /tmp/JUCE
+      - name: Configure released platform modules and real application tests
+        run: cmake -S Kick -B build -DKICK_JUCE_PATH=/tmp/JUCE -DCMAKE_BUILD_TYPE=Debug -DTIMESTAMP=OFF -DKICK_ENABLE_HARDWARE=OFF -DKICK_BUILD_PLATFORM_TESTS=ON -DKICK_CLAP_BUILD_TESTS=ON
+      - name: Build monolithic and split applications, host and platform tests
+        run: cmake --build build --parallel 2
+      - name: Run integration tests and actual application smoke
+        run: xvfb-run -a ctest --test-dir build --output-on-failure

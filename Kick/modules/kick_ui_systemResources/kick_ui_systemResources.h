@@ -50,6 +50,7 @@ namespace kick_ui
     class KSystemResources
         : public juce::Component
         , private juce::Timer
+        , public juce::DeletedAtShutdown
     {
     public:
         static KSystemResources& Instance();

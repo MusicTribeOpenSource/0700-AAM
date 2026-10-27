@@ -113,6 +113,9 @@ namespace mt
         // Virtual functions...
         virtual void noteProcess( juce::Array<juce::MidiMessage>& Msgs );
         virtual void refresh() {}
+        virtual bool prepareToSave() { return true; }
+        virtual juce::String saveError() const { return "Program state could not be saved"; }
+        virtual void updatePluginTransport(double, double, bool) {}
 
         std::array<int, 4> getSimultaneousNotePlay( int Note );
         std::array<int, 4> getSimultaneousNoteMute( int Note );

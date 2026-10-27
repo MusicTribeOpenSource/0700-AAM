@@ -222,7 +222,7 @@ namespace mt
     ///    KickSettings
     /// ///////////////////////////////////
 
-    class KickSettings : public KickXML
+    class KickSettings : public KickXML, public juce::DeletedAtShutdown
     {
     public:
         KickSettings();

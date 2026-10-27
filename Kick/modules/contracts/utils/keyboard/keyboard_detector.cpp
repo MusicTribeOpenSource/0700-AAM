@@ -181,7 +181,7 @@ namespace contracts
             shiftBtnState = mod.isShiftDown();
             CPktMgr::HWMsg_t hwMsg;
             hwMsg.data.push_back( (juce::int8)contracts::DeviceControlContracts::EN_SHIFT );
-            hwMsg.data.push_back( shiftBtnState ? (juce::int8)contracts::DeviceControlContracts::BTN_RELEASED : (juce::int8)contracts::DeviceControlContracts::BTN_PRESSED ); // Key Released/Pressed (in case of pad butto
+            hwMsg.data.push_back( shiftBtnState ? (juce::int8)contracts::DeviceControlContracts::BTN_PRESSED : (juce::int8)contracts::DeviceControlContracts::BTN_RELEASED );
             contracts::KeyboardSignals::KeyboardEventTriggered( hwMsg );
         }
         for( const auto& [keyCode, info] : _keyMap )

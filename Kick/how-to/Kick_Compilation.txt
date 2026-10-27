@@ -1,58 +1,45 @@
-======================================================================= 
- How to compile Kick in Linux.
-=======================================================================
-1. Install WSL in  your system 
+Building the released KICK application
+=====================================
 
-2. In order to compile Kick Install below packages 
-	
-	#sudo apt install gcc g++ bash patch gzip bzip2 perl tar cpio unzip \
-rsync file bc libasound2-dev libjack-jackd2-dev libcurl4-openssl-dev libfreetype6-dev \
-libx11-dev libxcomposite-dev libxcursor-dev libxcursor-dev libxext-dev libxinerama-dev \
-libxrandr-dev libxrender-dev libwebkit2gtk-4.0-dev libglu1-mesa-dev mesa-common-dev libserial*
+See ../README.md for desktop dependencies, tests, data/resource paths and current
+limitations. AudIO and ComProtocol now use the released sibling directories and
+local JUCE/serial adapters; private platform repositories are not needed.
 
+Desktop Linux/macOS, from the repository root:
 
-3. Clone the Kick Repo and inside repo create build folder.
+    cmake -S Kick -B /tmp/kick-build -DKICK_JUCE_PATH=/path/to/JUCE-7.0.12 \
+        -DCMAKE_BUILD_TYPE=Debug -DTIMESTAMP=OFF \
+        -DKICK_BUILD_PLATFORM_TESTS=ON -DKICK_CLAP_BUILD_TESTS=ON
+    cmake --build /tmp/kick-build --parallel 2
+    ctest --test-dir /tmp/kick-build --output-on-failure
 
-	# mkdir BuildLocal
-	# cd BuildLocal
-	
-4. Run CMake command and do make 
+Use xvfb-run -a before CTest on a headless Linux host. Desktop builds keep board
+operations disabled. Supply your own licensed samples, SoundFont and font files.
 
-	# cmake ../
-	# make -j4
-	
-******************************************************************************
-======================================================================= 
- How to Compile Buildroot in Linux.
-=======================================================================
-1. Clone the buildroot Repo and checkout testing branch
+Building a board SDK
+====================
 
-	# git clone <url-of-the-Linux-buildroot-repo>
-	# git checkout --track origin/testing
-	
-2. Run the Script to build the buildroot 
+In the companion Buildroot tree, build the KICK configuration and SDK:
 
-	#sh -x builder.sh KTKick_5.15RT
-	
-	
-3. This process will take 1 or 2 hours after complition.
+    make KTKick_defconfig
+    make sdk
 
-****************************************************************************************
+Install/relocate the generated SDK according to its Buildroot instructions. No
+prebuilt SDK archive is included in this release.
 
-======================================================================= 
- How to Cross Compile Kick in Linux.
-=======================================================================
+Cross compiling for the physical KICK
+===================================
 
-1. create folder in Kick repo 
+From the repository root, with CMake/Ninja and a JUCE 7.0.12 checkout available:
 
-	# get the file location of "toolchainfile.cmake" file in buildroot 
-	
-	Ex : /path/to/KT_Kick/uboot/Linux/buildroot/output/host/share/buildroot/toolchainfile.cmake
-	
-2. export the toolchain Path using below command
-	
-	#export TOOLCHAIN_FILE=/path/to/KT_Kick/uboot/Linux/buildroot/output/host/share/buildroot/toolchainfile.cmake
+    export TOOLCHAIN_FILE=/path/to/sdk/share/buildroot/toolchainfile.cmake
+    bash Kick/buildApp.sh Release -DKICK_JUCE_PATH=/path/to/JUCE-7.0.12
 
-3. Run the below script in kick repo.
-	
-	#  sh -x buildApp.sh Release
+The script enables KICK_ENABLE_HARDWARE and builds Kick/Build/Release/bin/Kick.
+KICK_BUILD_JOBS sets the build concurrency (default 2). Additional arguments go to
+CMake. A manual cross configure must pass -DKICK_ENABLE_HARDWARE=ON as well.
+The Linux touchscreen patch is applied to an owned build copy of JUCE.
+
+Deploy/run only on the intended board image. Desktop/QEMU tests do not establish
+board boot, physical I/O compatibility, callback deadlines or ALSA xrun limits.
+See ../clap_host/README.md for the offline/device benchmark workflow.

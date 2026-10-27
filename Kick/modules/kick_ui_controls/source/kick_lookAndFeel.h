@@ -27,14 +27,16 @@
 namespace ui
 {
 
-    class KickLooknFeel : public juce::LookAndFeel_V4
+    class KickLooknFeel : public juce::LookAndFeel_V4, public juce::DeletedAtShutdown
     {
     public:
         KickLooknFeel();
         static KickLooknFeel* getLnf()
         {
-            static KickLooknFeel _kickLnf;
-            return &_kickLnf;
+            // Its Drawable components must die before Desktop/message services.
+            juce::Desktop::getInstance();
+            static auto* instance = new KickLooknFeel;
+            return instance;
         };
 
     #if defined( DEBUG_TOUCH ) && ( DEBUG_TOUCH > 0 )

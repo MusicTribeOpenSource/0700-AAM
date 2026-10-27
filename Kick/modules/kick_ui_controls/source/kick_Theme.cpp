@@ -40,6 +40,11 @@ namespace ui
     static std::map<juce::String, juce::String> themeImgMap;
     static std::map<int, int>                   fontSizeMap;
 
+    class ThemeLifetime final : public juce::DeletedAtShutdown
+    {
+        ~ThemeLifetime() override { themeVT = {}; }
+    };
+
     ///
     /// Internal helper API's
     ///
@@ -131,6 +136,8 @@ namespace ui
     ///
     void Theme::loadTheme( const juce::String& ThemeDir, bool TriggerNotification )
     {
+        static auto* lifetime = new ThemeLifetime;
+        juce::ignoreUnused(lifetime);
         auto dir = getAppDirs( MTAssets ).getChildFile( ThemeDir );
         if( dir.exists() && dir.isDirectory() )
         {
