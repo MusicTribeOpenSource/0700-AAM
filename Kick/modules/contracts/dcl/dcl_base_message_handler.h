@@ -47,7 +47,7 @@ namespace contracts
                           std::weak_ptr<ipc::MTIPCMessageDispatcher> dispatcher ) override
         {
             CPktMgr::HWMsg_t hwMessage;
-            contracts::DclContractsHelper::ipcMessageToHWMessage( message, hwMessage );
+            if (!contracts::DclContractsHelper::ipcMessageToHWMessage( message, hwMessage )) return;
             contracts::DclSignals::dispatchHardwareInput( hwMessage );
             /*juce::Logger::writeToLog( "Received Message" );
             juce::Logger::writeToLog( juce::JSON::toString( message->getRoot() ) );*/

@@ -1,6 +1,31 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "AudIO_juce.h"
 namespace mt {
+namespace {
+// The format writer owns its stream and writes the final header in its
+// destructor. Capture failures through that final write and the disk flush.
+class RecordingOutputStream final : public juce::FileOutputStream {
+public:
+    RecordingOutputStream(const juce::File& file, bool& success)
+        : FileOutputStream(file, 0), written(success) {}
+    ~RecordingOutputStream() override {
+        flush();
+        written = written && getStatus().wasOk();
+    }
+    bool write(const void* data, size_t bytes) override {
+        const bool ok = FileOutputStream::write(data, bytes);
+        written = written && ok;
+        return ok;
+    }
+    bool setPosition(juce::int64 position) override {
+        const bool ok = FileOutputStream::setPosition(position);
+        written = written && ok;
+        return ok;
+    }
+private:
+    bool& written;
+};
+}
 Recorder::Recorder(AudIO::Design& design) : AudIO::Object(2, 2, 0), AudIO::DawRouting(design, AudIO::BusType::Object) {
     AudIO::DawRouting::setID(getId()); setName("Recorder"); startTimerHz(30);
 }
@@ -38,12 +63,15 @@ void Recorder::setRecordingMode(Mode value) {
 }
 void Recorder::setLength(double seconds) {
     if (!std::isfinite(seconds)) return;
-    const juce::SpinLock::ScopedLockType lock(gate);
-    recording.store(false); preview.store(false);
     seconds = juce::jlimit(0., 600., seconds);
-    audio.setSize(mode.load() <= LR_MONO ? 1 : 2, static_cast<int>(seconds * getSampleRate()), false, true);
-    audio.clear(); history.setSize(0, 0); validFrames.store(0); historyFrames = 0;
-    length.store(seconds); writePosition = readPosition = 0; progress.store(0);
+    {
+        const juce::SpinLock::ScopedLockType lock(gate);
+        recording.store(false); preview.store(false);
+        audio.setSize(mode.load() <= LR_MONO ? 1 : 2, static_cast<int>(seconds * getSampleRate()), false, true);
+        audio.clear(); history.setSize(0, 0); validFrames.store(0); historyFrames = 0;
+        length.store(seconds); writePosition = readPosition = 0; progress.store(0);
+    }
+    // UI callbacks may read snapshots or change recorder controls themselves.
     if (onRecorderLengthChanged) onRecorderLengthChanged(seconds);
 }
 void Recorder::startLocked(bool fromBeginning, bool skipThreshold) {
@@ -92,13 +120,17 @@ void Recorder::save(const juce::String& path) {
     stop(); auto& snapshot = getAudioBuffer();
     if (snapshot.getNumSamples() == 0 || snapshot.getNumChannels() == 0) { error = "There is no recording to save"; return; }
     juce::TemporaryFile temporary{juce::File(path)};
-    std::unique_ptr<juce::FileOutputStream> output(temporary.getFile().createOutputStream());
+    // Direct writes let the format writer detect partial disk writes before
+    // replacing the previous take; buffered flushes can hide short writes.
+    bool written = true;
+    auto output = std::make_unique<RecordingOutputStream>(temporary.getFile(), written);
     juce::WavAudioFormat wav;
-    std::unique_ptr<juce::AudioFormatWriter> writer(output ? wav.createWriterFor(output.get(), getSampleRate(), static_cast<unsigned>(snapshot.getNumChannels()), 24, {}, 0) : nullptr);
+    std::unique_ptr<juce::AudioFormatWriter> writer(output->openedOk() ? wav.createWriterFor(output.get(), getSampleRate(), static_cast<unsigned>(snapshot.getNumChannels()), 24, {}, 0) : nullptr);
     if (!writer) { error = "Cannot create recording file"; return; }
-    output.release();
-    const bool written = writer->writeFromAudioSampleBuffer(snapshot, 0, snapshot.getNumSamples()); writer.reset();
-    if (!written || !temporary.overwriteTargetFileWithTemporary()) error = "Cannot save recording"; else error.clear();
+    output.release(); // The writer now owns the stream.
+    const bool audioWritten = writer->writeFromAudioSampleBuffer(snapshot, 0, snapshot.getNumSamples());
+    writer.reset();
+    if (!audioWritten || !written || !temporary.overwriteTargetFileWithTemporary()) error = "Cannot save recording"; else error.clear();
 }
 AudIO::MeterData Recorder::readInputMeter() const {
     return {{juce::Decibels::gainToDecibels(inputRms[0].load(), -100.f), juce::Decibels::gainToDecibels(inputPeak[0].load(), -100.f)},
