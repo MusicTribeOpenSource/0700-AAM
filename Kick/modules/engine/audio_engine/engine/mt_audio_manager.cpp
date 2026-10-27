@@ -243,6 +243,9 @@ namespace mt
 
     bool MTAudioManager::saveProject()
     {
+        bool ready = true;
+        forAllPrograms([&](MTIProgram* program) { if (!program->prepareToSave()) ready = false; });
+        if (!ready) return false;
         projectManager::save();
         return true;
     }

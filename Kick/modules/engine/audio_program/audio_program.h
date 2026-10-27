@@ -64,5 +64,6 @@
     #include "source/mt_audio_midi_program.h"
     #include "source/mt_audio_cv_program.h"
     #include "source/mt_audio_audio_program.h"
+    #include "source/mt_audio_clap_program.h"
 
 #endif // Header include guard

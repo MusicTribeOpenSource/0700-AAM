@@ -44,6 +44,10 @@ Source code for the Behringer KICK.
 | [`ComProtocol/`](ComProtocol) | Hardware communication protocol | AGPL-3.0-or-later |
 | [`Linux/`](Linux) | Buildroot Linux image | GPL-2.0 (Buildroot) |
 
+The [CLAP host](Kick/clap_host/README.md) adds plugin-program integration, a generic
+touchscreen editor, and an independently buildable host/scanner test harness.
+See its build instructions and current hardware-validation limits.
+
 The root [`LICENSE`](LICENSE) is the AGPL-3.0 text that covers the Music Tribe code (Kick, AudIO, ComProtocol).
 Third-party components keep their original licenses. See the README in each folder.
 

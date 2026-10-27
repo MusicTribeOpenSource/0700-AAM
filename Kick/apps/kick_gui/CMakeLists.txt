@@ -170,3 +170,6 @@ install(
     DIRECTORY "${CMAKE_SOURCE_DIR}/demos" DESTINATION "."
     PATTERN "${CMAKE_SOURCE_DIR}/demos/*"
 )
+
+# Install the isolated CLAP scan worker beside the host executable.
+kick_bundle_clap_scanner(${TargetName})

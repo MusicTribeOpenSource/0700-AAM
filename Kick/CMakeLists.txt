@@ -3,6 +3,13 @@ include_guard()
 cmake_minimum_required(VERSION 3.16)
 project(KIckDevelopment)
 
+option(KICK_CLAP_HOST_ONLY "Build CLAP hosting without the unreleased hardware dependencies" OFF)
+if(KICK_CLAP_HOST_ONLY)
+    enable_testing()
+    add_subdirectory(clap_host)
+    return()
+endif()
+
 ## Set CPM cache location
 if( NOT CPM_SOURCE_CACHE )
     set(CPM_SOURCE_CACHE ${CMAKE_SOURCE_DIR}/../.3rdPartySourceCache )
@@ -106,6 +113,10 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 ## CMake package management...
 ## Fetch 3rd Party dependencies from their respective git repositories...
 include(3rdParty.cmake)
+
+set(KICK_CLAP_BUILD_JUCE ON CACHE BOOL "Build the KICK CLAP adapter" FORCE)
+set(KICK_CLAP_BUILD_TESTS OFF CACHE BOOL "Build standalone CLAP tests separately")
+add_subdirectory(clap_host)
 
 # Add project applications...
 if( TIMESTAMP )

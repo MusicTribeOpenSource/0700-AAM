@@ -95,3 +95,6 @@ if(USE_ASAN_KICK)
    target_compile_options(${TargetName}  PRIVATE /Od)
    set(addressSanitizerEnabled true)
 endif()
+
+# Install the isolated CLAP scan worker beside the host executable.
+kick_bundle_clap_scanner(${TargetName})

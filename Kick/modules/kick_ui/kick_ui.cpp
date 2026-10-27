@@ -23,6 +23,7 @@
 #include "row_view/kick_IRowView.cpp"
 
 // Program_view
+#include "program_view/source/kick_ClapPanel.h"
 #include "program_view/source/kick_AppProgram.cpp"
 #include "program_view/source/kick_AppProgramComponent.cpp"
 #include "program_view/source/kick_AppProgramOptions.cpp"

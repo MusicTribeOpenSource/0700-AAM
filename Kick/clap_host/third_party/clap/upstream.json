@@ -1,0 +1,5 @@
+{
+  "repository": "https://github.com/free-audio/clap",
+  "commit": "a47f6badb49d948fd009998f28309cdab78979c9",
+  "note": "Vendored include/clap only (header-only C ABI); no source changes."
+}

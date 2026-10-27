@@ -52,3 +52,4 @@
 #include "source/mt_audio_midi_program.cpp"
 #include "source/mt_audio_cv_program.cpp"
 #include "source/mt_audio_audio_program.cpp"
+#include "source/mt_audio_clap_program.cpp"

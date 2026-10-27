@@ -59,6 +59,10 @@ AppProgramDisplay::AppProgramDisplay( int Index )
 
     edit.onClick = [&]() {
         ae.setSelectedProgram( progNumber );
+        if (progType == mt::MTProgramType::Plugin) {
+            kick_ui::openClapInstrument(ae.getProgram(progNumber));
+            return;
+        }
         if( progType == mt::MTProgramType::Keygroup || progType == mt::MTProgramType::Midi || progType == mt::MTProgramType::Cv )
             kick_ui::signals::sigScreenClose( kick_ui::Screen::MenuPadPerform );
         else if( progType == mt::MTProgramType::Drum )
@@ -275,7 +279,8 @@ void AppProgramDisplay::refreshDisplay()
             mt::utils::makeVisible( route, assign, edit );
             break;
         case mt::MTProgramType::Plugin:
-            mt::utils::makeVisible( route );
+            edit.setImages("EDIT");
+            mt::utils::makeVisible( route, edit );
             break;
         case mt::MTProgramType::Cv:
             edit.setImages( "padPerform", "padperform_active" );

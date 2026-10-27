@@ -106,6 +106,7 @@ namespace mt
         if( type == MTProgramType::Midi ) prog = new MTMidiProgram( engine, VT, undoManager );
         if( type == MTProgramType::Cv ) prog = new MTCVProgram( engine, VT, undoManager );
         if( type == MTProgramType::Audio ) prog = new MTAudioProgram( engine, VT, undoManager );
+        if( type == MTProgramType::Plugin ) prog = new MTClapProgram( engine, VT, undoManager );
 
         if( prog )
         {
@@ -168,6 +169,7 @@ namespace mt
     {
         if( auto prog = getProgram( program ) )
         {
+            if (!prog->prepareToSave()) return -1;
             auto name = prog->getName() + "_copy";
             auto vt   = prog->getState().createCopy();
 
