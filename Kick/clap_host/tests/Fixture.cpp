@@ -17,6 +17,7 @@
 #include <thread>
 
 namespace {
+std::atomic<bool> savingState{false}, releaseState{false};
 std::atomic<int> threadErrors{0}, entryUsers{0}, processCalls{0}, callbackCalls{0};
 constexpr const char* ids[]{"org.kick.test.synth", "org.kick.test.effect", "org.kick.test.midi",
                             "org.kick.test.nan", "org.kick.test.error", "org.kick.test.sleep",
@@ -94,6 +95,15 @@ struct Plugin {
         }
     }
     static clap_process_status process(const clap_plugin_t* p, const clap_process_t* b) {
+#ifdef FIXTURE_slow
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+#endif
+#ifdef FIXTURE_process_crash
+        std::abort();
+#endif
+#ifdef FIXTURE_process_hang
+        std::this_thread::sleep_for(std::chrono::seconds(20));
+#endif
         auto& s = get(p); s.audio(); ++processCalls;
         if (!s.active || !s.processing || !b->frames_count || b->frames_count > s.maxFrames) ++threadErrors;
         if (s.kind == 4) return CLAP_PROCESS_ERROR;
@@ -165,6 +175,11 @@ struct Plugin {
         static const clap_plugin_state_t state{
             [](const clap_plugin_t* p, const clap_ostream_t* out) {
                 get(p).main();
+#ifdef FIXTURE_held_state
+                savingState.store(true);
+                while (!releaseState.load()) std::this_thread::yield();
+                savingState.store(false);
+#endif
                 // Exercise short writes and a genuinely opaque payload.
                 const double value = get(p).gain;
                 const auto* bytes = reinterpret_cast<const uint8_t*>(&value);
@@ -202,6 +217,8 @@ const clap_plugin_factory_t factory{
     }};
 }
 extern "C" {
+CLAP_EXPORT bool fixture_saving_state() { return savingState.load(); }
+CLAP_EXPORT void fixture_release_state() { releaseState.store(true); }
 CLAP_EXPORT int fixture_thread_errors() { return threadErrors.load(); }
 CLAP_EXPORT int fixture_entry_users() { return entryUsers.load(); }
 CLAP_EXPORT int fixture_process_calls() { return processCalls.load(); }

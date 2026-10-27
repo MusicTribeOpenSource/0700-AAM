@@ -176,7 +176,8 @@ void PluginPanel::timerCallback() {
         if (auto* row = dynamic_cast<ParameterRow*>(parameterList.getComponentForRowNumber(i))) row->refresh();
     const auto stats = host.statistics();
     if (!scanJob) statusLabel.setText(session->status() + "  |  latency " + juce::String(host.latency()) + " samples  |  peak " +
-                                     juce::String(stats.maximumMicroseconds, 0) + " us  |  dropped " + juce::String(stats.droppedEvents), juce::dontSendNotification);
+                                     juce::String(stats.maximumMicroseconds, 0) + " us  |  missed " + juce::String(stats.deadlineMisses) +
+                                     "  |  paused " + juce::String(stats.controlSilences) + "  |  dropped " + juce::String(stats.droppedEvents), juce::dontSendNotification);
 }
 void PluginPanel::paint(juce::Graphics& g) { g.fillAll(juce::Colour(0xff15191e)); }
 void PluginPanel::resized() {

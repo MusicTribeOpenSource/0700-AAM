@@ -139,6 +139,7 @@ struct Host::Impl {
     std::atomic<uint32_t> rescan{0}, latencyFrames{0};
     std::atomic<uint64_t> blocks{0}, dropped{0}, errors{0};
     std::atomic<double> lastUs{0}, maxUs{0};
+    std::atomic<uint64_t> deadlineMisses{0}, controlSilences{0}, idleBlocks{0};
     detail::Queue<Event, maxEvents> commands, emitted;
     struct TimedEvent { Event event; uint32_t order = 0; };
     std::array<TimedEvent, maxEvents> ordered;
@@ -655,7 +656,7 @@ bool Host::parameterGesture(clap_id id, bool begin) noexcept {
 }
 bool Host::stateDirty() const noexcept { return impl->dirty.load(); }
 uint32_t Host::latency() const noexcept { return impl->latencyFrames.load(); }
-Statistics Host::statistics() const noexcept { auto& s = *impl; return {s.blocks.load(), s.dropped.load(), s.errors.load(), s.lastUs.load(), s.maxUs.load()}; }
+Statistics Host::statistics() const noexcept { auto& s = *impl; return {s.blocks.load(), s.dropped.load(), s.errors.load(), s.lastUs.load(), s.maxUs.load(), s.deadlineMisses.load(), s.controlSilences.load(), s.idleBlocks.load()}; }
 bool Host::enqueue(const Event& e) noexcept {
     auto& s = *impl;
     if (!validEvent(e.header())) return false;
@@ -671,7 +672,10 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
     auto& s = *impl;
     auto silence = [&] { if (output) for (uint32_t c = 0; c < no; ++c) if (output[c]) std::fill_n(output[c], frames, 0.f); };
     if (!frames) return true;
-    if (!output || (count && !incoming) || s.gate.test_and_set(std::memory_order_acquire)) { silence(); return false; }
+    if (!output || (count && !incoming)) { silence(); return false; }
+    if (s.gate.test_and_set(std::memory_order_acquire)) {
+        s.controlSilences.fetch_add(1); silence(); return false;
+    }
     struct Release { std::atomic_flag& flag; ~Release() { flag.clear(std::memory_order_release); } } release{s.gate};
     AudioScope scope(&s);
     if (!s.plugin || !s.active || s.failed.load()) { silence(); return false; }
@@ -704,7 +708,7 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
         if (input) for (uint32_t c = 0; c < ni && !hasInput; ++c) if (input[c])
             for (uint32_t i = 0; i < frames; ++i) if (input[c][i] != 0.f) { hasInput = true; break; }
         const bool transportWake = s.transportChanged(transport, frames);
-        if (s.sleeping && !total && !hasInput && !transportWake && !s.wake.exchange(false) && !s.flush.load()) { s.steadyTime += frames; silence(); return true; }
+        if (s.sleeping && !total && !hasInput && !transportWake && !s.wake.exchange(false) && !s.flush.load()) { s.idleBlocks.fetch_add(1); s.steadyTime += frames; silence(); return true; }
         s.wake.store(false); s.sleeping = false;
         if (!s.processing) {
             if (!s.plugin->start_processing(s.plugin)) { s.failed.store(true); s.errors.fetch_add(1); silence(); return false; }
@@ -767,6 +771,7 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
         s.blocks.fetch_add(1);
         const auto us = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count();
         s.lastUs.store(us); if (us > s.maxUs.load()) s.maxUs.store(us);
+        if (us > frames / s.sampleRate * 1e6) s.deadlineMisses.fetch_add(1);
         return true;
     } catch (...) { s.failed.store(true); s.errors.fetch_add(1); silence(); return false; }
 }

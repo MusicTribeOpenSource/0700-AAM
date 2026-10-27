@@ -1,4 +1,4 @@
-foreach(kind normal crash hang)
+foreach(kind normal crash hang slow held_state process_crash process_hang)
     add_library(kick-clap-fixture-${kind} MODULE Fixture.cpp)
     target_include_directories(kick-clap-fixture-${kind} PRIVATE ../third_party/clap/include)
     target_compile_features(kick-clap-fixture-${kind} PRIVATE cxx_std_17)
@@ -43,4 +43,25 @@ if(TARGET kick_clap_juce)
     target_compile_definitions(kick-clap-hardware-tests PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1 JUCE_USE_CURL=0)
     add_test(NAME kick-clap-hardware COMMAND kick-clap-hardware-tests)
     set_tests_properties(kick-clap-hardware PROPERTIES TIMEOUT 10)
+endif()
+
+add_executable(kick-clap-benchmark-tests BenchmarkTests.cpp)
+target_link_libraries(kick-clap-benchmark-tests PRIVATE kick_clap_benchmark)
+add_test(NAME kick-clap-benchmark COMMAND kick-clap-benchmark-tests
+    $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:kick-clap-fixture-slow> $<TARGET_FILE:kick-clap-fixture-held_state>)
+set_tests_properties(kick-clap-benchmark PROPERTIES TIMEOUT 20)
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME kick-clap-benchmark-cli COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/BenchmarkCliTests.py"
+        $<TARGET_FILE:kick-clap-bench> $<TARGET_FILE:kick-clap-fixture-normal>
+        $<TARGET_FILE:kick-clap-fixture-process_crash> $<TARGET_FILE:kick-clap-fixture-process_hang>
+        "${CMAKE_CURRENT_SOURCE_DIR}/../tools/benchmark_matrix.py")
+    set_tests_properties(kick-clap-benchmark-cli PROPERTIES TIMEOUT 30)
+endif()
+if(TARGET kick-clap-device-bench)
+    add_executable(kick-clap-device-benchmark-tests DeviceBenchmarkTests.cpp)
+    target_link_libraries(kick-clap-device-benchmark-tests PRIVATE kick_clap_benchmark juce::juce_audio_devices)
+    target_compile_definitions(kick-clap-device-benchmark-tests PRIVATE JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0)
+    add_test(NAME kick-clap-device-benchmark COMMAND kick-clap-device-benchmark-tests $<TARGET_FILE:kick-clap-fixture-normal>)
+    set_tests_properties(kick-clap-device-benchmark PROPERTIES TIMEOUT 10)
 endif()

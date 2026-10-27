@@ -51,6 +51,8 @@ struct Event {
 struct Statistics {
     uint64_t blocks = 0, droppedEvents = 0, processErrors = 0;
     double lastMicroseconds = 0, maximumMicroseconds = 0;
+    // Cumulative per host. A missed DSP deadline is not an audio-device xrun.
+    uint64_t deadlineMisses = 0, controlSilences = 0, idleBlocks = 0;
 };
 
 // Control API belongs to ONE main/UI thread. process(), enqueue() and atomic

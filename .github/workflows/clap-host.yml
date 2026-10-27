@@ -53,3 +53,20 @@ jobs:
       - run: cmake -S Kick/clap_host -B build -DKICK_CLAP_BUILD_JUCE=ON -DKICK_CLAP_BUILD_PLAYER=ON -DKICK_CLAP_JUCE_PATH=/tmp/JUCE -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build build --parallel 2
       - run: xvfb-run -a ctest --test-dir build --output-on-failure
+
+  aarch64:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cross compiler and emulator
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user
+      - name: Configure target build
+        run: cmake -S Kick -B build-arm -DKICK_CLAP_HOST_ONLY=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/Kick/clap_host/cmake/aarch64-linux-gnu.cmake '-DCMAKE_CROSSCOMPILING_EMULATOR=qemu-aarch64;-L;/usr/aarch64-linux-gnu'
+      - run: cmake --build build-arm --parallel 2
+      # This fixture test does not exec a target scanner from within QEMU.
+      # Emulator results establish compatibility only, never hardware timing.
+      - run: ctest --test-dir build-arm -R '^kick-clap-benchmark$' --output-on-failure
+      - name: Smoke-test target report schema
+        run: |
+          qemu-aarch64 -L /usr/aarch64-linux-gnu build-arm/clap_host/kick-clap-bench --plugin build-arm/clap_host/tests/kick-clap-fixture-normal.clap --id org.kick.test.synth --seconds .05 --warmup 0 --output arm-smoke.json
+          python3 -c 'import json; r=json.load(open("arm-smoke.json")); assert r["completed"] and r["architecture"] == "aarch64"'
