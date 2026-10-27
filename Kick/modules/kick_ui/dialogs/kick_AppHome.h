@@ -34,8 +34,10 @@ namespace kick_ui
     public:
         static KickHome& Instance()
         {
-            static KickHome _instance;
-            return _instance;
+            // HomeWindow owns the component; retain only a weak reference here.
+            static juce::Component::SafePointer<KickHome> instance;
+            if (!instance) instance = new KickHome;
+            return *instance;
         }
 
         inline Screen getCurrentScreen() const { return currentScreen; }

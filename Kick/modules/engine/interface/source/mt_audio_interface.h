@@ -117,7 +117,7 @@ namespace mt
     };
 
     class MTAudioInterface
-        : public MTLooperInterface
+        : public MTLooperInterface, public juce::DeletedAtShutdown
     {
     public:
         explicit MTAudioInterface( const char* Name, const char* Manufacturer, const char* Version );

@@ -4,6 +4,8 @@ namespace ui
 
     IPv4Editor::IPv4Editor()
     {
+        intermidentValues.fill(0);
+        editorsValue.fill(0);
         setLookAndFeel( ui::KickLooknFeel::getLnf() );
 
         mt::utils::addAndMakeVisible( this, num1, num2, num3, num4, num5, num6, num7, num8, num9, num0, clr, apply, cancel );

@@ -51,7 +51,7 @@ namespace kick_ui
         Page
     };
 
-    class GridSettings : public juce::Component
+    class GridSettings : public juce::Component, public juce::DeletedAtShutdown
     {
     public:
         std::function<void( bool )>                     onHittingPadModeChanged;
@@ -61,8 +61,8 @@ namespace kick_ui
 
         static GridSettings& Instance()
         {
-            static GridSettings gridSettings;
-            return gridSettings;
+            static auto* gridSettings = new GridSettings;
+            return *gridSettings;
         }
 
         enum ScreenType
@@ -95,7 +95,7 @@ namespace kick_ui
     // GridData
     ///////////////////////////////////////////////////////////////////////
 
-    class GridData : public mt::MTAudioInterfaceListener
+    class GridData : public mt::MTAudioInterfaceListener, public juce::DeletedAtShutdown
     {
         SIGNALS : sigslot::signal<>    gridChanged;
         SIGNALS : sigslot::signal<>    gridPlayHeadChanged;
@@ -109,8 +109,8 @@ namespace kick_ui
 
         static GridData& Instance()
         {
-            static GridData _instance;
-            return _instance;
+            static auto* instance = new GridData;
+            return *instance;
         }
 
         static int   getNotesInSemiTone() { return 1; }

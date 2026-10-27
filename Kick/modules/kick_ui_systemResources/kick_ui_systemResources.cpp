@@ -14,8 +14,9 @@ namespace kick_ui
 {
     KSystemResources& KSystemResources::Instance()
     {
-        static KSystemResources _sysR;
-        return _sysR;
+        ui::KickLooknFeel::getLnf();
+        static auto* resources = new KSystemResources;
+        return *resources;
     }
 
     KSystemResources::KSystemResources()

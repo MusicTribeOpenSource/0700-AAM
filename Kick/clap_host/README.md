@@ -43,8 +43,10 @@ development app bundle. The JUCE session test can also load a real plugin:
 
 That test renders notes offline and verifies opaque plugin state survives project
 XML serialization/restoration. It does not open an audio device. The full KICK
-application still needs the release's missing platform dependencies documented
-in `../README.md`, including the AudIO JUCE-module glue and `juce_serialport`.
+application now integrates the released platform sources and replacement JUCE/serial
+modules; see [application build instructions](../README.md). Its smoke test exercises
+CLAP program creation, rendering, duplication, project save/reopen and shutdown
+inside the actual application with board/audio devices disabled.
 
 ## Use in KICK
 

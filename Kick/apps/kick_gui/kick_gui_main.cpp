@@ -184,7 +184,8 @@ public:
     void shutdown() override
     {
         // Add your application's shutdown code here ...
-
+        mt::getAudioInterface().closeProject();
+        w.reset();
         dclInterface.reset();
         audioEngineInterface.reset();
         IPCApplication::shutdown();
@@ -206,6 +207,10 @@ public:
     //==============================================================================
     void systemRequestedQuit() override
     {
+        if (ui::RecentProject::isProjectLoading) {
+            juce::Timer::callAfterDelay(100, [this] { systemRequestedQuit(); });
+            return;
+        }
         // Check while the UI and live programs still exist. A rejected save
         // leaves the project open and its global error visible for recovery.
         if (!mt::getAudioInterface().saveProject()) return;

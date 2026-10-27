@@ -177,7 +177,7 @@ namespace mt
             vt.setProperty( IDs::id, "", nullptr ); // this will be replaced with unique id.
 
             createProgram( vt, true );
-            setSelectedProgram( programs.size() );
+            setSelectedProgram( static_cast<int>(programs.size()) - 1 );
             return 0;
         }
         return -1;

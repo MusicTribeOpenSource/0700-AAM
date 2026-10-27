@@ -91,3 +91,8 @@ if(KICK_CLAP_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+# JUCE's IDE-only module headers include internal .cpp files. Static libraries
+# need the same per-directory source-property fixup that juce_add_gui_app uses.
+if(COMMAND _juce_fixup_module_source_groups)
+    _juce_fixup_module_source_groups()
+endif()

@@ -30,7 +30,7 @@ namespace mt
     {
         audioFmtMgr.registerBasicFormats();
         ASliceRenderer::setSlice( &slice );
-        slice.setSource( &sound );
+        slice.setSource( sound.get() );
     }
 
     ASoundPlayer::~ASoundPlayer()
@@ -41,23 +41,24 @@ namespace mt
     void ASoundPlayer::setSoundToPlay( const juce::String& File, double LengthInSeconds )
     {
         ASliceRenderer::stop();
-        sound.setSound( File, LengthInSeconds );
+        sound->setSound( File, LengthInSeconds );
+        slice.setSource(sound.get());
 
         slice.refresh();
-        slice.setLoopPoints( 0, sound.getNumSamplesPerChannel() );
+        slice.setLoopPoints( 0, sound->getNumSamplesPerChannel() );
 
         ASliceRenderer::reset();
     }
 
     void ASoundPlayer::removeSound()
     {
-        sound.purge();
+        sound->purge();
         slice.setSource( nullptr );
     }
 
     bool ASoundPlayer::isValidSource()
     {
-        return sound.isValid();
+        return sound->isValid();
     }
 
 } // namespace mt

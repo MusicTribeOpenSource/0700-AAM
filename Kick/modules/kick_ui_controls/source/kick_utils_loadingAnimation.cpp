@@ -27,11 +27,10 @@ namespace mt
 {
     namespace utils
     {
-        std::vector<juce::Image> LoadAnimation::gifImages;
         LoadAnimation::LoadAnimation()
         {
             ui::themeChanged.connect( [&]() {
-                gifImages.clear();
+                frames->images.clear();
                 loadImages();
             } );
 
@@ -46,6 +45,7 @@ namespace mt
 
         void LoadAnimation::loadImages()
         {
+            auto& gifImages = frames->images;
             if( 0 == gifImages.size() )
             {
                 gifImages.reserve( 14 );
@@ -84,13 +84,13 @@ namespace mt
         void LoadAnimation::paint( juce::Graphics& g )
         {
             if( isAnimating )
-                g.drawImage( gifImages[id], getLocalBounds().toFloat() );
+                g.drawImage( frames->images[id], getLocalBounds().toFloat() );
         }
 
         void LoadAnimation::timerCallback()
         {
             ++id;
-            if( id >= gifImages.size() )
+            if( id >= frames->images.size() )
                 id = 0;
 
             repaint();

@@ -87,7 +87,7 @@ namespace kick_ui
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR( KickModeHeader )
     };
 
-    class MetronomePopup : public juce::Component
+    class MetronomePopup : public juce::Component, public juce::DeletedAtShutdown
     {
     public:
         MetronomePopup();
@@ -98,8 +98,9 @@ namespace kick_ui
 
         static MetronomePopup& Instance()
         {
-            static MetronomePopup metronome;
-            return metronome;
+            ui::KickLooknFeel::getLnf();
+            static auto* metronome = new MetronomePopup;
+            return *metronome;
         }
         static void Show();
 

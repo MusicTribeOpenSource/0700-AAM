@@ -155,13 +155,17 @@ namespace mt
 
     MTAudioManager::~MTAudioManager()
     {
-        MTAudioRecorderManager::closeRecorder();
-        internalTimer.stopTimer();
-        _previewer = nullptr;
-
-        MTAudioTransportManager::stop();
+        // No callback may retain recorder/program objects while they are freed.
         engine.stopAudioDevice();
+        internalTimer.stopTimer();
+        // The application's views have already gone away. Destruction must not
+        // publish transport notifications to their signal callbacks.
+        listeners.clear();
+        transportStateChanged = {};
+        MTAudioTransportManager::stop();
         closeProject();
+        MTAudioRecorderManager::closeRecorder();
+        _previewer = nullptr;
         // Base destruction happens after the live program manager is gone.
         // A failed shutdown save must not be replaced with stale XML later.
         detachWithoutSaving();
@@ -228,6 +232,7 @@ namespace mt
 
     bool MTAudioManager::closeProject()
     {
+        if (!projectLoaded) return true;
         // Persist while the programs still exist. On failure the active project,
         // playback and selection remain available for recovery and retry.
         if (!projectManager::close()) return false;

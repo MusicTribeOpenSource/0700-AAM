@@ -36,8 +36,8 @@ EXTRACTED_DIR="/home/aarch64-buildroot-linux-gnu_sdk-buildroot"  # The expected 
 		sudo tar -xvzf aarch64-buildroot-linux-gnu_sdk-buildroot.tar.gz -C /home/
 	fi
 	cd -
-	sudo cmake -DCPM_SOURCE_CACHE="/home/3rdPartycache" -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=/home/aarch64-buildroot-linux-gnu_sdk-buildroot/share/buildroot/toolchainfile.cmake -DCMAKE_INSTALL_PREFIX=./Build/  ./
+	sudo cmake -DCPM_SOURCE_CACHE="/home/3rdPartycache" -DCMAKE_BUILD_TYPE=Debug -DKICK_ENABLE_HARDWARE=ON -DCMAKE_TOOLCHAIN_FILE=/home/aarch64-buildroot-linux-gnu_sdk-buildroot/share/buildroot/toolchainfile.cmake -DCMAKE_INSTALL_PREFIX=./Build/  ./
 	sudo make -j8
-	sudo cmake -DCPM_SOURCE_CACHE="/home/3rdPartycache" -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=/home/aarch64-buildroot-linux-gnu_sdk-buildroot/share/buildroot/toolchainfile.cmake -DCMAKE_INSTALL_PREFIX=./Build/  ./
+	sudo cmake -DCPM_SOURCE_CACHE="/home/3rdPartycache" -DCMAKE_BUILD_TYPE=Release -DKICK_ENABLE_HARDWARE=ON -DCMAKE_TOOLCHAIN_FILE=/home/aarch64-buildroot-linux-gnu_sdk-buildroot/share/buildroot/toolchainfile.cmake -DCMAKE_INSTALL_PREFIX=./Build/  ./
 	sudo make -j8
 fi

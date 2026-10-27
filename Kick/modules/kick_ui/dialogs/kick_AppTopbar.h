@@ -26,7 +26,7 @@ namespace kick_ui
     {
     public:
         AppTopbar();
-        ~AppTopbar() = default;
+        ~AppTopbar() override { ae.removeListener(this); }
 
     private:
         void                  resized() override;

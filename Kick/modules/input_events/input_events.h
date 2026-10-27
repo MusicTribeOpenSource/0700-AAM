@@ -6,7 +6,7 @@
 
  BEGIN_JUCE_MODULE_DECLARATION
 
-  ID:                 kick_ui_controls
+  ID:                 input_events
   vendor:             MUSIC Tribe, MY
   version:            0.1.0
   name:               MusicTribe Common definitions
@@ -14,7 +14,7 @@
   website:
   license:            AGPLv3
 
-  dependencies:       signal, PktMgr, juce_serialport
+  dependencies:       signal, PktMgr, serial_port
 
  END_JUCE_MODULE_DECLARATION
 
@@ -49,7 +49,7 @@
     // Dependent module includes.
     #include <3rdParty/signal/signal.hpp>
     #include <PktMgr/PktMgr.hpp>
-    #include <juce_serialport/juce_serialport.h>
+    #include <serial_port/serial_port.h>
 
 namespace Controls
 {

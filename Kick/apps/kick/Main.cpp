@@ -24,6 +24,9 @@
 #include "kick_device_adapter.h"
 #include "kick_audio_engine_adapter.h"
 #include "kick_audio_interface.h"
+#if KICK_APP_SMOKE_TEST
+ #include "../../tests/platform/AppSmoke.h"
+#endif
 
 #ifdef PERFETTO
     #include "melatonin_perfetto/melatonin_perfetto.h"
@@ -126,14 +129,15 @@ public:
     }
 
     //==============================================================================
-    void initialise( const juce::String& /*commandLine*/ ) override
+    void initialise( const juce::String& commandLine ) override
     {
         audioInterface.reset(new KickAudioInterface());
         engineAdapter.reset(new KickAudioEngineAdapter(audioInterface));
         
         adapter.reset( new KickDeviceAdapter() );
         // This method is where you should put your application's initialisation code ...
-        juce::Desktop::getInstance().getMainMouseSource().enableUnboundedMouseMovement( true, true );
+        const bool smoke = commandLine.contains("--smoke-test");
+        if (!smoke) juce::Desktop::getInstance().getMainMouseSource().enableUnboundedMouseMovement(true, true);
 
         // Exit kiosk mode ...
         juce::Desktop::getInstance().setKioskModeComponent( nullptr );
@@ -167,13 +171,30 @@ public:
         w->setBounds( bounds );
 
 #if( JUCE_IOS || JUCE_ANDROID || JUCE_LINUX || __linux__ )
-        juce::Desktop::getInstance().setKioskModeComponent( w.get(), false );
+        if (!smoke) juce::Desktop::getInstance().setKioskModeComponent( w.get(), false );
 #endif
         // Position ...
         w->setTopLeftPosition( 0, 0 );
 
         // Visibility...
-        w->setVisible( true );
+        w->setVisible(!smoke);
+        if (smoke) juce::Timer::callAfterDelay(1500, [this] {
+#if KICK_APP_SMOKE_TEST
+            const auto error = runKickAppSmoke();
+            if (error.isNotEmpty()) {
+                std::cerr << "FAIL: " << error << std::endl;
+                setApplicationReturnValue(3);
+            }
+#endif
+            const auto path = juce::SystemStats::getEnvironmentVariable("KICK_SMOKE_SNAPSHOT", {});
+            if (path.isNotEmpty() && w->getContentComponent()) {
+                auto image = w->getContentComponent()->createComponentSnapshot(w->getContentComponent()->getLocalBounds());
+                juce::FileOutputStream output{juce::File(path)};
+                juce::PNGImageFormat png;
+                if (!output.openedOk() || !png.writeImageToStream(image, output)) setApplicationReturnValue(2);
+            }
+            quit();
+        });
 
 #if PERFETTO
         MelatoninPerfetto::get().beginSession();
@@ -186,6 +207,8 @@ public:
         MelatoninPerfetto::get().endSession();
 #endif
         // Add your application's shutdown code here ...
+        Controls::InputEvents::shutdown();
+        mt::getAudioInterface().closeProject();
         w = nullptr;
         adapter = nullptr;
     }
@@ -193,6 +216,10 @@ public:
     //==============================================================================
     void systemRequestedQuit() override
     {
+        if (ui::RecentProject::isProjectLoading) {
+            juce::Timer::callAfterDelay(100, [this] { systemRequestedQuit(); });
+            return;
+        }
         // Check while the UI and live programs still exist. A rejected save
         // leaves the project open and its global error visible for recovery.
         if (!mt::getAudioInterface().saveProject()) return;

@@ -1,3 +1,4 @@
+#include "kick_HardwareMode.h"
 /*
  * Copyright (c) 2021 MUSIC Tribe
  *
@@ -109,6 +110,7 @@ namespace mt
 
     void FirmwareUpdate::updateFirmware()
     {
+        if (!hardwareEnabled()) return;
         bool mcuFwStatus = ( isMCUImagePresent() && mt::HwPref::getHwPref().getSurfaceVersion().isNotEmpty() );
 
 #if defined( __linux__ ) || defined( __linux ) || defined( linux )
@@ -143,6 +145,7 @@ namespace mt
 
     int FirmwareUpdate::MCUUpdate( juce::String& McuFilePath )
     {
+        if (!hardwareEnabled()) return -1;
         int               SwUpdateSuccess = -1;
         mt::swupdatemsg_t data;
 
@@ -425,6 +428,7 @@ namespace mt
 
     int FirmwareUpdate::linuxUpdate( bool status )
     {
+        if (!hardwareEnabled()) return -1;
         int fwstatus = SUCCESS;
         DBG( "IN FIRMWRE UPDATE" );
         swupdatemsg_t data;

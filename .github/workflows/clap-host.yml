@@ -1,9 +1,9 @@
 name: CLAP host
 on:
   push:
-    paths: ['Kick/**', 'ComProtocol/**', '.github/workflows/clap-host.yml']
+    paths: ['Kick/**', 'AudIO/**', 'ComProtocol/**', '.github/workflows/clap-host.yml']
   pull_request:
-    paths: ['Kick/**', 'ComProtocol/**', '.github/workflows/clap-host.yml']
+    paths: ['Kick/**', 'AudIO/**', 'ComProtocol/**', '.github/workflows/clap-host.yml']
 permissions:
   contents: read
 jobs:
@@ -47,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install build and headless display dependencies
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libx11-dev libxext-dev libxinerama-dev libxrandr-dev libxcursor-dev libfreetype-dev libgl1-mesa-dev xvfb xauth
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libjack-jackd2-dev libx11-dev libxext-dev libxinerama-dev libxrandr-dev libxcursor-dev libfreetype-dev libfontconfig1-dev libxi-dev libgl1-mesa-dev xvfb xauth
       - name: Fetch JUCE
         run: git clone --depth 1 --branch ${{ matrix.juce }} https://github.com/juce-framework/JUCE.git /tmp/JUCE
       - run: cmake -S Kick/clap_host -B build -DKICK_CLAP_BUILD_JUCE=ON -DKICK_CLAP_BUILD_PLAYER=ON -DKICK_CLAP_JUCE_PATH=/tmp/JUCE -DCMAKE_BUILD_TYPE=Release
@@ -70,3 +70,19 @@ jobs:
         run: |
           qemu-aarch64 -L /usr/aarch64-linux-gnu build-arm/clap_host/kick-clap-bench --plugin build-arm/clap_host/tests/kick-clap-fixture-normal.clap --id org.kick.test.synth --seconds .05 --warmup 0 --output arm-smoke.json
           python3 -c 'import json; r=json.load(open("arm-smoke.json")); assert r["completed"] and r["architecture"] == "aarch64"'
+
+  application:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install application build and display dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libjack-jackd2-dev libx11-dev libxext-dev libxinerama-dev libxrandr-dev libxcursor-dev libxi-dev libfreetype-dev libfontconfig1-dev libgl1-mesa-dev xvfb xauth
+      - name: Fetch application JUCE
+        run: git clone --depth 1 --branch 7.0.12 https://github.com/juce-framework/JUCE.git /tmp/JUCE
+      - name: Configure released platform modules and real application tests
+        run: cmake -S Kick -B build -DKICK_JUCE_PATH=/tmp/JUCE -DCMAKE_BUILD_TYPE=Debug -DTIMESTAMP=OFF -DKICK_ENABLE_HARDWARE=OFF -DKICK_BUILD_PLATFORM_TESTS=ON -DKICK_CLAP_BUILD_TESTS=ON
+      - name: Build monolithic and split applications, host and platform tests
+        run: cmake --build build --parallel 2
+      - name: Run integration tests and actual application smoke
+        run: xvfb-run -a ctest --test-dir build --output-on-failure

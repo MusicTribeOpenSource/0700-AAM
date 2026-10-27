@@ -13,6 +13,7 @@ namespace ui
 
     LoadProjectAndAnimation::~LoadProjectAndAnimation()
     {
+        stopThread(-1);
         ae.removeListener( this );
     }
 
@@ -32,18 +33,18 @@ namespace ui
                 //No need to free the LoadAnimation object, once LoadProjectAndAnimation static object destroyed then it will automatically destroy LoadAnimation object
                 stopAnimation();
                 kick_ui::signals::sigScreenOpen( kick_ui::Screen::HomeListView );
-                ui::RecentProject::isProjectLoading = false;
             } );
         }
     }
 
     void LoadProjectAndAnimation::run()
     {
-        if (!mt::getAudioInterface().loadProject(proj)) {
-            juce::MessageManager::callAsync([this] {
-                stopAnimation();
-                ui::RecentProject::isProjectLoading = false;
-            });
-        }
+        const auto loaded = mt::getAudioInterface().loadProject(proj);
+        // Publish completion after all message-thread persistence barriers.
+        // Quit can then join this worker without blocking a barrier it needs.
+        juce::MessageManager::callAsync([this, loaded] {
+            if (!loaded) stopAnimation();
+            ui::RecentProject::isProjectLoading = false;
+        });
     }
 }

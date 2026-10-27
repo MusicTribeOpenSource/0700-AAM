@@ -3,7 +3,7 @@ include_guard()
 cmake_minimum_required(VERSION 3.16)
 project(KIckDevelopment)
 
-option(KICK_CLAP_HOST_ONLY "Build CLAP hosting without the unreleased hardware dependencies" OFF)
+option(KICK_CLAP_HOST_ONLY "Build independent CLAP hosting without the application modules" OFF)
 if(KICK_CLAP_HOST_ONLY)
     enable_testing()
     add_subdirectory(clap_host)
@@ -20,9 +20,13 @@ message("")
 
 
 ## CMake package management...
-include(get_cpm.cmake)
+set(KICK_JUCE_PATH "" CACHE PATH "Existing JUCE 7.0.12 source tree")
+if(NOT KICK_JUCE_PATH OR PERFETTO)
+    include(get_cpm.cmake)
+endif()
 
 # Add or Disable optional components
+option(KICK_ENABLE_HARDWARE "Enable Linux board devices and system configuration" OFF)
 option( TIMESTAMP "Require fresh timestamp every build" ON )
 option( USE_VALUE_TREE_DEBUGGER "Value Tree Debugger" OFF )
 option( DISABLE_JUCE_MEMORY_LEAK_DETECTION "juce memory" OFF )
@@ -87,7 +91,7 @@ endif(APPLE)
 
 # Compile with werror in release builds
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -Wno-unknown-pragmas -ffast-math -Ofast" )
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unknown-pragmas" )
     ## set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto -stdlib=libc++ -funroll-loops -ftree-vectorize -fvectorize")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ")
 elseif (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
@@ -108,7 +112,7 @@ endif()
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 ## CMake package management...
 ## Fetch 3rd Party dependencies from their respective git repositories...
@@ -124,6 +128,11 @@ if( TIMESTAMP )
 endif()
 add_subdirectory(modules)
 add_subdirectory(apps)
+option(KICK_BUILD_PLATFORM_TESTS "Build native platform integration tests" OFF)
+if(KICK_BUILD_PLATFORM_TESTS)
+    enable_testing()
+    add_subdirectory(tests/platform)
+endif()
 
 ##
 ## Add CPack support
