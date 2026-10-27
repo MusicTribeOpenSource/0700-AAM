@@ -3,6 +3,8 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <kick_clap/Host.h>
 #include <atomic>
+#include <mutex>
+#include <chrono>
 
 namespace kick::clap {
 // Shared by the KICK program and its audio object. All plugin control and
@@ -37,11 +39,15 @@ private:
     std::atomic<double> requestedRate{0}, tempo{120}, beats{0};
     std::atomic<uint32_t> requestedFrames{512}, transportRevision{0};
     std::atomic<bool> playing{false};
+    std::mutex transportWriters; // producers only; render never takes this lock
     double preparedRate = 0; // main thread
     uint32_t preparedFrames = 0;
     std::atomic<double> renderRate{0};
     uint32_t audioTransportRevision = 0;
     double audioBeats = 0;
+    double audioTempo = 120;
+    bool audioPlaying = false;
     juce::String loadedPath, loadedId;
+    std::chrono::steady_clock::time_point snapshotDue{};
 };
 } // namespace kick::clap

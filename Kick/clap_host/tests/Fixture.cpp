@@ -20,7 +20,8 @@ namespace {
 std::atomic<int> threadErrors{0}, entryUsers{0}, processCalls{0}, callbackCalls{0};
 constexpr const char* ids[]{"org.kick.test.synth", "org.kick.test.effect", "org.kick.test.midi",
                             "org.kick.test.nan", "org.kick.test.error", "org.kick.test.sleep",
-                            "org.kick.test.activate-failure", "org.kick.test.start-failure"};
+                            "org.kick.test.activate-failure", "org.kick.test.start-failure", "org.kick.test.stepped", "org.kick.test.no-state",
+                            "org.kick.test.save-failure", "org.kick.test.transport"};
 const char* instrument[]{CLAP_PLUGIN_FEATURE_INSTRUMENT, CLAP_PLUGIN_FEATURE_SYNTHESIZER, nullptr};
 const char* effect[]{CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, nullptr};
 const clap_plugin_descriptor_t descriptors[]{
@@ -31,14 +32,18 @@ const clap_plugin_descriptor_t descriptors[]{
     {CLAP_VERSION, ids[4], "KICK error", "KICK", "", "", "", "1", "Fault fixture", instrument},
     {CLAP_VERSION, ids[5], "KICK sleep", "KICK", "", "", "", "1", "Sleep fixture", instrument},
     {CLAP_VERSION, ids[6], "KICK activation failure", "KICK", "", "", "", "1", "Failure fixture", instrument},
-    {CLAP_VERSION, ids[7], "KICK start failure", "KICK", "", "", "", "1", "Failure fixture", instrument}};
+    {CLAP_VERSION, ids[7], "KICK start failure", "KICK", "", "", "", "1", "Failure fixture", instrument},
+    {CLAP_VERSION, ids[8], "KICK steps", "KICK", "", "", "", "1", "Stepped fixture", instrument},
+    {CLAP_VERSION, ids[9], "KICK no state", "KICK", "", "", "", "1", "Unsupported state fixture", instrument},
+    {CLAP_VERSION, ids[10], "KICK save failure", "KICK", "", "", "", "1", "Failed state fixture", instrument},
+    {CLAP_VERSION, ids[11], "KICK transport", "KICK", "", "", "", "1", "Transport fixture", instrument}};
 struct Plugin {
     clap_plugin_t api{};
     const clap_host_t* host;
     const clap_host_thread_check_t* check;
     int kind;
     bool active = false, processing = false, gate = false;
-    double gain = .5;
+    double gain = .5, toggle = 0, mode = 0;
     clap_id timerId = CLAP_INVALID_ID;
     uint32_t maxFrames = 0;
     static Plugin& get(const clap_plugin_t* p) { return *static_cast<Plugin*>(p->plugin_data); }
@@ -80,6 +85,8 @@ struct Plugin {
         }
         if (e->type == CLAP_EVENT_PARAM_VALUE) {
             const auto* value = reinterpret_cast<const clap_event_param_value_t*>(e);
+            if (value->param_id == 8) toggle = value->value;
+            if (value->param_id == 9) mode = value->value;
             if (value->param_id == 7) {
                 gain = value->value; if (value->cookie != this) ++threadErrors;
                 if (gain > .9) { host->request_restart(host); host->request_callback(host); }
@@ -90,6 +97,7 @@ struct Plugin {
         auto& s = get(p); s.audio(); ++processCalls;
         if (!s.active || !s.processing || !b->frames_count || b->frames_count > s.maxFrames) ++threadErrors;
         if (s.kind == 4) return CLAP_PROCESS_ERROR;
+        if (s.kind == 11) s.gate = b->transport && (b->transport->flags & CLAP_TRANSPORT_IS_PLAYING);
         uint32_t event = 0;
         const auto count = b->in_events->size(b->in_events);
         for (uint32_t i = 0; i < b->frames_count; ++i) {
@@ -110,9 +118,9 @@ struct Plugin {
         value.header = {sizeof(value), 0, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_PARAM_VALUE, 0};
         value.param_id = 7; value.value = s.gain;
         b->out_events->try_push(b->out_events, &value.header);
-        return !s.gate && s.kind == 5 ? CLAP_PROCESS_SLEEP : CLAP_PROCESS_CONTINUE;
+        return !s.gate && (s.kind == 5 || s.kind == 11) ? CLAP_PROCESS_SLEEP : CLAP_PROCESS_CONTINUE;
     }
-    static const void* extension(const clap_plugin_t*, const char* id) {
+    static const void* extension(const clap_plugin_t* plugin, const char* id) {
         static const clap_plugin_audio_ports_t audio{
             [](const clap_plugin_t* p, bool input) -> uint32_t { get(p).main(); return input ? (get(p).kind == 1 ? 1 : 0) : 1; },
             [](const clap_plugin_t* p, uint32_t i, bool input, clap_audio_port_info_t* out) {
@@ -131,16 +139,24 @@ struct Plugin {
                 return true;
             }};
         static const clap_plugin_params_t params{
-            [](const clap_plugin_t*) -> uint32_t { return 2; },
+            [](const clap_plugin_t* p) -> uint32_t { return get(p).kind == 8 ? 4 : 2; },
             [](const clap_plugin_t* p, uint32_t index, clap_param_info_t* out) {
-                get(p).main(); if (index > 1) return false;
+                get(p).main();
+                if (get(p).kind == 8 && (index == 2 || index == 3)) {
+                    *out = {}; out->id = index == 2 ? 8 : 9; out->cookie = &get(p);
+                    std::strcpy(out->name, index == 2 ? "Toggle" : "Mode");
+                    out->flags = CLAP_PARAM_IS_STEPPED | CLAP_PARAM_IS_AUTOMATABLE;
+                    if (index == 3) out->flags |= CLAP_PARAM_IS_ENUM;
+                    out->min_value = 0; out->max_value = index == 2 ? 1 : 4; return true;
+                }
+                if (index > 1) return false;
                 *out = {}; out->id = index ? 99 : 7; out->cookie = &get(p);
                 std::strcpy(out->name, index ? "Read only" : "Gain");
                 out->min_value = 0; out->max_value = 1; out->default_value = .5;
                 out->flags = index ? CLAP_PARAM_IS_READONLY : CLAP_PARAM_IS_AUTOMATABLE;
                 return true;
             },
-            [](const clap_plugin_t* p, clap_id id, double* value) { get(p).main(); if (id != 7 && id != 99) return false; *value = get(p).gain; return true; },
+            [](const clap_plugin_t* p, clap_id id, double* value) { get(p).main(); if (id == 8) *value = get(p).toggle; else if (id == 9) *value = get(p).mode; else if (id == 7 || id == 99) *value = get(p).gain; else return false; return true; },
             [](const clap_plugin_t*, clap_id, double value, char* out, uint32_t size) { std::snprintf(out, size, "%.2f", value); return true; },
             [](const clap_plugin_t*, clap_id, const char* text, double* value) { *value = std::atof(text); return true; },
             [](const clap_plugin_t* p, const clap_input_events_t* in, const clap_output_events_t*) {
@@ -153,7 +169,7 @@ struct Plugin {
                 const double value = get(p).gain;
                 const auto* bytes = reinterpret_cast<const uint8_t*>(&value);
                 for (size_t i = 0; i < sizeof(value); ++i) if (out->write(out, bytes + i, 1) != 1) return false;
-                return true;
+                return !(get(p).kind == 10 && value > .65);
             },
             [](const clap_plugin_t* p, const clap_istream_t* in) {
                 auto& s = get(p); s.main(); if (s.active) ++threadErrors;
@@ -171,17 +187,17 @@ struct Plugin {
         if (!std::strcmp(id, CLAP_EXT_AUDIO_PORTS)) return &audio;
         if (!std::strcmp(id, CLAP_EXT_NOTE_PORTS)) return &notes;
         if (!std::strcmp(id, CLAP_EXT_PARAMS)) return &params;
-        if (!std::strcmp(id, CLAP_EXT_STATE)) return &state;
+        if (!std::strcmp(id, CLAP_EXT_STATE)) return get(plugin).kind == 9 ? nullptr : &state;
         if (!std::strcmp(id, CLAP_EXT_LATENCY)) return &latency;
         if (!std::strcmp(id, CLAP_EXT_TIMER_SUPPORT)) return &timers;
         return nullptr;
     }
 };
 const clap_plugin_factory_t factory{
-    [](const clap_plugin_factory_t*) -> uint32_t { return 8; },
-    [](const clap_plugin_factory_t*, uint32_t index) -> const clap_plugin_descriptor_t* { return index < 8 ? &descriptors[index] : nullptr; },
+    [](const clap_plugin_factory_t*) -> uint32_t { return 12; },
+    [](const clap_plugin_factory_t*, uint32_t index) -> const clap_plugin_descriptor_t* { return index < 12 ? &descriptors[index] : nullptr; },
     [](const clap_plugin_factory_t*, const clap_host_t* host, const char* id) -> const clap_plugin_t* {
-        for (int i = 0; i < 8; ++i) if (!std::strcmp(id, ids[i])) return &(new Plugin(host, i))->api;
+        for (int i = 0; i < 12; ++i) if (!std::strcmp(id, ids[i])) return &(new Plugin(host, i))->api;
         return nullptr;
     }};
 }

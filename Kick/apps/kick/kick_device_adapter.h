@@ -36,7 +36,7 @@ public:
     {
         Controls::InputEvents::initialize();
         auto handler = [&]( CPktMgr::HWMsg_t& f_HwMsg ) {
-            contracts::DclSignals::hardwareInputTriggered( f_HwMsg );
+            contracts::DclSignals::dispatchHardwareInput( f_HwMsg );
         };
 
         Controls::InputEvents::dispatchHardwareEvent.connect( handler );

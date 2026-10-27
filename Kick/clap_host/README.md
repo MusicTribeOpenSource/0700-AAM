@@ -57,17 +57,24 @@ in `../README.md`, including the AudIO JUCE-module glue and `juce_serialport`.
    own identity. Linux hardware requires Linux AArch64 binaries and compatible
    runtime libraries; macOS/Windows or Linux x86 binaries do not work there.
 4. Edit or search the generated parameter controls. Assign parameters to the four
-   knob menus. KICK's physical knobs control those assignments while the page is
-   open. Mappings are stored in the project.
+   knob menus. KICK's physical knobs control those assignments while its dialog is
+   active, through the common monolithic/split GUI hardware route. Consumed knob
+   events do not also edit screen/Q-Link controls. Stepped parameters move by
+   whole encoder ticks in both directions. Mappings are stored in the project.
 5. Save the project. Plugin path, exact plugin ID, opaque CLAP state, and knob
    assignments are stored in the program's `CLAP` ValueTree child. Duplicating a
-   program first snapshots the live state. Missing plugins retain their saved
-   identity and state; selecting the same plugin ID at a new path relinks it.
+   program first snapshots the live state. Explicit save, autosave, and project
+   close/switch share a message-thread preparation barrier before writing XML or
+   destroying programs. Missing plugins retain their saved identity and state; selecting the same plugin ID at a new path relinks it.
 
 An instrument without the state extension can play, but cannot provide reliable
 project recall; saving reports failure rather than pretending parameters are a
-complete substitute for plugin state. **Panic** resets held notes. **Remove**
-explicitly clears the plugin assignment and saved state.
+complete substitute for plugin state. A failed snapshot or disk write leaves the
+project dirty and preserves the previous saved file. Save errors identify the
+program/plugin in a global warning and status indicator; failed close/switch
+keeps the current project open for retry or plugin removal. Normal application
+quit also checks saving before destroying windows. **Panic** resets held notes.
+**Remove** explicitly clears the plugin assignment and saved state.
 
 Set `KICK_CLAP_SCANNER` to an absolute worker executable path when it is installed
 somewhere other than beside KICK or in `/usr/bin` / `/usr/local/bin`.
@@ -87,7 +94,10 @@ Scanner errors are shown in the page's count, tooltips, and tappable **Scan erro
 - A per-instance atomic gate excludes state/reconfiguration work from processing.
   The callback returns silence while the gate is held; a long plugin state save or
   restart can therefore interrupt sound. The control thread never waits for an
-  audio callback that may already have stopped. Exclusive stop/reset/flush scopes
+  audio callback that may already have stopped. Dirty opaque state is snapshotted
+  on the message thread in coalesced 250 ms windows (failed snapshots retry after
+  two seconds), even with the editor closed. These automatic snapshots use the
+  same gate and can also interrupt sound. Exclusive stop/reset/flush scopes
   are marked as CLAP's **symbolic audio thread**, as explicitly permitted by the
   thread-check specification. They never run concurrently with processing.
 - Input/output port layouts are queried rather than assumed stereo. The core
@@ -100,8 +110,8 @@ Scanner errors are shown in the page's count, tooltips, and tappable **Scan erro
   a bounded queue and is applied at the next block boundary. Adding CLAP does not
   make that upstream sequencer sample-accurate.
 - Tempo/beat position and play/stop state are supplied from the assigned KICK
-  track. The audio session interpolates between tick updates. Loop/time-signature
-  and recording flags are not yet advertised. A program shared by multiple tracks
+  track. The audio session reads a coherent transport tuple without blocking
+  and interpolates between tick updates. Loop/time-signature and recording flags are not yet advertised. A program shared by multiple tracks
   receives their latest transport update; use separate programs for independent
   transport contexts.
 - Host extensions include thread-check, parameters, state dirty notifications,
@@ -109,8 +119,9 @@ Scanner errors are shown in the page's count, tooltips, and tappable **Scan erro
   notifications, and bounded log handling. Main-thread callbacks and restart/
   process/flush requests are serviced by the message loop.
 - Idle instruments returning `CLAP_PROCESS_SLEEP` skip DSP until an event, input
-  signal, or wake request. Invalid process statuses and nonfinite mapped output
-  silence and fault that instance. Event overflow is counted and triggers a reset
+  signal, wake request, or transport transition (including Play/Stop, tempo and
+  seek). Normal beat progression does not itself wake an idle plugin. Invalid
+  process statuses and nonfinite mapped output silence and fault that instance. Event overflow is counted and triggers a reset
   to avoid stuck notes. Per-instance callback-time, drop and error counters are
   available without locks. No thread-pool extension is advertised.
 
@@ -140,8 +151,21 @@ oversized blocks, mono/stereo and effect routing, parameters/gestures, queued
 parameter state saving, opaque state recall, concurrent control/rendering,
 bounded-event overflow/panic, idle sleep/wake, process/start/activation failures,
 and a render-time C++ allocation guard. Optional JUCE tests cover MIDI/audio,
-transport delivery, macro edits and XML project recall. Test fixtures are never
-installed into the target plugin directory.
+transport-start wake-up without MIDI, continuous/stepped macro edits, missing
+plugin relinking, duplicate/recall, and the actual KickXML autosave/close paths.
+Persistence tests cover failed/unsupported state, preserved disk/opaque snapshots,
+message-thread marshaling, dirty/error notification, and successful retry. Common
+hardware-contract tests cover exclusive dialog ownership, pass-through, lifetime,
+worker dispatch, and the actual split GUI IPC/keyboard producers. Test fixtures
+are never installed into the target plugin directory.
+
+Enable `-DKICK_CLAP_SANITIZE=ON` for ASan/UBSan on the core, consumers, and all
+fixture MODULE libraries. The render guard supplies scalar/array, sized, aligned,
+and nothrow allocation/deallocation pairs. `.github/workflows/clap-host.yml` runs
+Linux release and default-settings GCC/Clang sanitizer suites, plus JUCE 7/8
+integration suites with a headless display. No allocator-mismatch suppression is
+used. Local AppleClang 15 ASan runtime initialization currently aborts even in a
+minimal empty executable; that environment failure does not clear Linux ASan.
 
 Actual hardware boot, ALSA round-trip latency, xrun behavior, and performance with
 Linux AArch64 plugins must be measured on the target. Desktop results do not

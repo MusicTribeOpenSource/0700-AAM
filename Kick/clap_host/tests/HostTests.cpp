@@ -13,15 +13,7 @@
 #include <dlfcn.h>
 #endif
 using namespace kick::clap;
-static thread_local bool forbidAllocation = false;
-void* operator new(std::size_t size) {
-    if (forbidAllocation) { std::fputs("Heap allocation during rendering\n", stderr); std::abort(); }
-    if (auto* p = std::malloc(size ? size : 1)) return p;
-    throw std::bad_alloc();
-}
-void operator delete(void* p) noexcept { std::free(p); }
-void* operator new[](std::size_t n) { return ::operator new(n); }
-void operator delete[](void* p) noexcept { ::operator delete(p); }
+#include "AllocationGuard.h"
 static void check(bool ok, const char* why) { if (!ok) { std::cerr << "FAIL: " << why << '\n'; std::exit(1); } }
 static bool render(Host& h, float* const* out, uint32_t n, const Event* e = nullptr, uint32_t count = 0,
                    const float* const* in = nullptr, uint32_t ni = 0) {
@@ -37,12 +29,12 @@ int main(int argc, char** argv) {
     check(diagnostics != nullptr, "keep fixture diagnostics alive through all unloads");
 #endif
     const auto catalog = inspect(argv[1]);
-    check(catalog.failures.empty() && catalog.plugins.size() == 8, "enumerate every descriptor in one binary");
+    check(catalog.failures.empty() && catalog.plugins.size() == 12, "enumerate every descriptor in one binary");
     ScanResult decoded;
     check(decodeScan(encodeScan(catalog), decoded) && decoded.plugins[2].id == catalog.plugins[2].id, "catalog wire roundtrip");
     check(!decodeScan("broken", decoded) && !decodeScan(encodeScan(catalog).substr(0, 20), decoded), "reject malformed scanner output");
     auto isolated = scan({argv[1]}, argv[2]);
-    check(isolated.plugins.size() == 8 && isolated.failures.empty(), "isolated scanner enumeration");
+    check(isolated.plugins.size() == 12 && isolated.failures.empty(), "isolated scanner enumeration");
     check(scan({argv[3]}, argv[2], 1000).failures.size() == 1, "scanner crash isolation");
     check(scan({argv[4]}, argv[2], 100).failures.size() == 1, "scanner timeout isolation");
 
@@ -117,6 +109,31 @@ int main(int argc, char** argv) {
     check(h.enqueue(note) && render(h, out, 128) && left[0] == .5f, "event wakes sleeping plugin");
     check(!h.load(catalog.plugins[6], 48000, 128) && !h.loaded(), "failed activation cleans up");
     check(h.load(catalog.plugins[7], 48000, 128) && !render(h, out, 128), "failed start faults safely");
+    check(h.load(catalog.plugins[11], 48000, 128), "load transport-driven instrument");
+    clap_event_transport_t transport{};
+    transport.flags = CLAP_TRANSPORT_HAS_TEMPO | CLAP_TRANSPORT_HAS_BEATS_TIMELINE;
+    transport.tempo = 120;
+    auto transportRender = [&] {
+        forbidAllocation = true;
+        const bool ok = h.process(nullptr, 0, out, 2, 128, nullptr, 0, &transport);
+        forbidAllocation = false; return ok;
+    };
+    check(transportRender() && left[0] == 0, "transport fixture sleeps stopped");
+    before = h.statistics().blocks;
+    check(transportRender() && h.statistics().blocks == before, "unchanged transport stays asleep");
+    transport.flags |= CLAP_TRANSPORT_IS_PLAYING;
+    check(transportRender() && left[0] == .5f && h.statistics().blocks > before, "Play wakes instrument without MIDI");
+    transport.flags &= ~CLAP_TRANSPORT_IS_PLAYING;
+    check(transportRender() && left[0] == 0, "Stop reaches instrument");
+    before = h.statistics().blocks; transport.tempo = 90;
+    check(transportRender() && h.statistics().blocks > before, "tempo edit wakes stopped instrument");
+    before = h.statistics().blocks; transport.song_pos_beats = 8 * CLAP_BEATTIME_FACTOR;
+    check(transportRender() && h.statistics().blocks > before, "seek wakes stopped instrument");
+    check(h.load(catalog.plugins[5], 48000, 128), "load sleeping note instrument for timeline test");
+    transport.flags |= CLAP_TRANSPORT_IS_PLAYING;
+    check(transportRender(), "first playing block"); before = h.statistics().blocks;
+    transport.song_pos_beats += static_cast<clap_beattime>(128. / 48000 * 90 / 60 * CLAP_BEATTIME_FACTOR);
+    check(transportRender() && h.statistics().blocks == before, "normal beat progression does not wake idle instrument");
     auto missing = catalog.plugins[0]; missing.id = "missing.id";
     check(!h.load(missing, 48000, 128), "do not substitute another descriptor for missing saved ID");
     second.unload(); h.unload();

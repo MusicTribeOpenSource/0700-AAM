@@ -36,7 +36,7 @@ namespace contracts
         DclBaseMessageHandler()
         {
             contracts::KeyboardSignals::KeyboardEventTriggered.connect( [&]( CPktMgr::HWMsg_t& f_HwMsg ) {
-                contracts::DclSignals::hardwareInputTriggered( f_HwMsg );
+                contracts::DclSignals::dispatchHardwareInput( f_HwMsg );
             } );
         }
 
@@ -48,7 +48,7 @@ namespace contracts
         {
             CPktMgr::HWMsg_t hwMessage;
             contracts::DclContractsHelper::ipcMessageToHWMessage( message, hwMessage );
-            contracts::DclSignals::hardwareInputTriggered( hwMessage );
+            contracts::DclSignals::dispatchHardwareInput( hwMessage );
             /*juce::Logger::writeToLog( "Received Message" );
             juce::Logger::writeToLog( juce::JSON::toString( message->getRoot() ) );*/
         };

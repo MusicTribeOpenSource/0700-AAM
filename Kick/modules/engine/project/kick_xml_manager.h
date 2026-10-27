@@ -20,6 +20,9 @@
  */
 
 #pragma once
+#include <juce_data_structures/juce_data_structures.h>
+#include <juce_events/juce_events.h>
+#include "../../common/source/kick_ValueTreeUtils.h"
 #ifndef KICK_XML_MANAGER_H_INCLUDE
     #define KICK_XML_MANAGER_H_INCLUDE
 
@@ -35,21 +38,36 @@ namespace mt
         ~KickXML();
 
         std::function<void()> onLoad = []() {};
+        // Every persistence path uses this barrier before serializing live state.
+        // Called on the message thread, including saves requested by a loader.
+        std::function<juce::Result()> prepareSave;
+        std::function<void(const juce::String&)> onSaveFailure;
+        std::function<void(bool)> onDirtyChanged;
 
         // Main API's...
         juce::ValueTree loadOrCreate( const juce::File& XMLFIle );
-        void            save();
-        void            close();
+        enum class SaveReason { Explicit, Autosave, Close };
+        bool            save(SaveReason reason = SaveReason::Explicit);
+        bool            close();
+        bool            isDirty() const noexcept { return dirty.load(); }
+        const juce::String& getLastSaveError() const noexcept { return lastSaveError; }
 
         void                   setAutoSave( bool AutoSave ) { autoSave = AutoSave; }
         void                   setAutoSaveTime( int AutoSaveTimeInMS ) { autoSaveTimeOutInMS = AutoSaveTimeInMS; }
         juce::ValueTree&       getState() { return vt; }
-        const juce::String&    getDirectory() { return xmlFileDir.getFullPathName(); }
+        const juce::String&    getDirectory() { return directoryText; }
         juce::CriticalSection& getCriticalSection() { return lock; };
+
+    protected:
+        // Shutdown only: do not write stale state from base-class destruction
+        // after the derived owner's live-program callbacks have gone away.
+        void detachWithoutSaving();
 
     private:
         void valueTreeChanged() override;
         void handleAsyncUpdate() override;
+        bool saveOnMessageThread(SaveReason);
+        bool failSave(const juce::String&, SaveReason);
 
     private:
         const juce::Identifier id;
@@ -59,8 +77,10 @@ namespace mt
         juce::CriticalSection lock;
         juce::File            xmlFileDir;
         juce::File            xmlFile;
+        juce::String          directoryText, lastSaveError;
         juce::ValueTree       vt;
         juce::UndoManager     undo;
+        std::atomic<bool> dirty{false}, autosaveDue{false}, saving{false};
 
         static bool autoSave;
         static int  autoSaveTimeOutInMS;
@@ -73,7 +93,7 @@ namespace mt
                 : Parent( parent ) {}
             ~pvtTimer() { stopTimer(); }
 
-            void timerCallback() override { Parent.triggerAsyncUpdate(); }
+            void timerCallback() override { stopTimer(); Parent.autosaveDue.store(true); Parent.triggerAsyncUpdate(); }
         };
         pvtTimer timer{ *this };
     };

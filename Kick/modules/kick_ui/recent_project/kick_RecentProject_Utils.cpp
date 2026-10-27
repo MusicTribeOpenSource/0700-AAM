@@ -39,6 +39,11 @@ namespace ui
 
     void LoadProjectAndAnimation::run()
     {
-        mt::getAudioInterface().loadProject( proj );
+        if (!mt::getAudioInterface().loadProject(proj)) {
+            juce::MessageManager::callAsync([this] {
+                stopAnimation();
+                ui::RecentProject::isProjectLoading = false;
+            });
+        }
     }
 }

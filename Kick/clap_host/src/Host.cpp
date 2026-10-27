@@ -130,6 +130,9 @@ struct Host::Impl {
     uint32_t maxFrames = 512;
     int64_t steadyTime = 0;
     bool active = false, processing = false, sleeping = false;
+    bool transportObserved = false, hadTransport = false;
+    clap_event_transport_t previousTransport{};
+    uint32_t previousTransportFrames = 0;
     std::atomic_flag gate = ATOMIC_FLAG_INIT;
     std::atomic<bool> loaded{false}, failed{false}, dirty{false};
     std::atomic<bool> restart{false}, callback{false}, wake{false}, flush{false}, panic{false};
@@ -276,6 +279,7 @@ struct Host::Impl {
         failed.store(false); dirty.store(false); restart.store(false); callback.store(false);
         wake.store(false); flush.store(false); panic.store(false); rescan.store(0); latencyFrames.store(0);
         steadyTime = 0;
+        transportObserved = hadTransport = false;
         carryCount = 0;
         ++metadataVersion;
     }
@@ -362,6 +366,7 @@ struct Host::Impl {
         readPorts(); readParameters();
         if (!plugin->activate(plugin, sampleRate, 1, maxFrames)) throw std::runtime_error("Plugin activation failed");
         active = true;
+        transportObserved = false;
         latencyFrames.store(pluginLatency && pluginLatency->get ? pluginLatency->get(plugin) : 0);
         return true;
     }
@@ -377,8 +382,9 @@ struct Host::Impl {
         if (event->type == CLAP_EVENT_PARAM_VALUE) {
             const auto* p = reinterpret_cast<const clap_event_param_value_t*>(event);
             auto i = s.paramIndex(p->param_id);
-            if (i < s.paramInfo.size() && std::isfinite(p->value)) s.paramValues[i].store(p->value);
-            s.dirty.store(true);
+            if (i < s.paramInfo.size() && std::isfinite(p->value)) {
+                if (s.paramValues[i].exchange(p->value) != p->value) s.dirty.store(true);
+            }
         }
         Event copy; std::memcpy(copy.bytes.data(), event, event->size);
         reinterpret_cast<clap_event_header_t*>(copy.bytes.data())->time += s.outputFrameOffset;
@@ -424,6 +430,33 @@ struct Host::Impl {
                                    static_cast<uint16_t>(n.port_index));
         }
         return event;
+    }
+    bool transportChanged(const clap_event_transport_t* current, uint32_t frames) noexcept {
+        bool changed = !transportObserved || hadTransport != (current != nullptr);
+        if (current && hadTransport && transportObserved) {
+            const auto& old = previousTransport;
+            changed |= current->flags != old.flags;
+            if (current->flags & CLAP_TRANSPORT_HAS_TEMPO)
+                changed |= current->tempo != old.tempo || current->tempo_inc != old.tempo_inc;
+            if (current->flags & CLAP_TRANSPORT_HAS_TIME_SIGNATURE)
+                changed |= current->tsig_num != old.tsig_num || current->tsig_denom != old.tsig_denom;
+            const auto elapsed = (old.flags & CLAP_TRANSPORT_IS_PLAYING) ? previousTransportFrames / sampleRate : 0.;
+            if (current->flags & CLAP_TRANSPORT_HAS_BEATS_TIMELINE) {
+                const auto expected = static_cast<long double>(old.song_pos_beats) +
+                    elapsed * old.tempo / 60. * CLAP_BEATTIME_FACTOR;
+                changed |= std::abs(static_cast<long double>(current->song_pos_beats) - expected) > 2.;
+                changed |= current->loop_start_beats != old.loop_start_beats || current->loop_end_beats != old.loop_end_beats ||
+                           current->bar_start != old.bar_start || current->bar_number != old.bar_number;
+            }
+            if (current->flags & CLAP_TRANSPORT_HAS_SECONDS_TIMELINE) {
+                const auto expected = static_cast<long double>(old.song_pos_seconds) + elapsed * CLAP_SECTIME_FACTOR;
+                changed |= std::abs(static_cast<long double>(current->song_pos_seconds) - expected) > 2.;
+                changed |= current->loop_start_seconds != old.loop_start_seconds || current->loop_end_seconds != old.loop_end_seconds;
+            }
+        }
+        if (current) previousTransport = *current;
+        hadTransport = current != nullptr; transportObserved = true; previousTransportFrames = frames;
+        return changed;
     }
     bool accepts(const Event& event) const noexcept {
         const auto* h = event.header();
@@ -670,7 +703,8 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
         bool hasInput = false;
         if (input) for (uint32_t c = 0; c < ni && !hasInput; ++c) if (input[c])
             for (uint32_t i = 0; i < frames; ++i) if (input[c][i] != 0.f) { hasInput = true; break; }
-        if (s.sleeping && !total && !hasInput && !s.wake.exchange(false) && !s.flush.load()) { s.steadyTime += frames; silence(); return true; }
+        const bool transportWake = s.transportChanged(transport, frames);
+        if (s.sleeping && !total && !hasInput && !transportWake && !s.wake.exchange(false) && !s.flush.load()) { s.steadyTime += frames; silence(); return true; }
         s.wake.store(false); s.sleeping = false;
         if (!s.processing) {
             if (!s.plugin->start_processing(s.plugin)) { s.failed.store(true); s.errors.fetch_add(1); silence(); return false; }

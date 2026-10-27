@@ -15,6 +15,7 @@ public:
     void noteOff(int note) override;
     void noteOffAll() override { session->panic(); }
     bool prepareToSave() override { return session->save(); }
+    juce::String saveError() const override { return session->status(); }
     void updatePluginTransport(double bpm, double beats, bool playing) override { session->setTransport(bpm, beats, playing); }
     void enableOutputMetering(bool) override;
     const MTMeterData& readOutMeter() const override;

@@ -193,6 +193,9 @@ public:
     //==============================================================================
     void systemRequestedQuit() override
     {
+        // Check while the UI and live programs still exist. A rejected save
+        // leaves the project open and its global error visible for recovery.
+        if (!mt::getAudioInterface().saveProject()) return;
 #if PERFETTO
         MelatoninPerfetto::get().endSession();
 #endif
@@ -201,7 +204,7 @@ public:
         // carry on running, or call quit() to allow the app to close.
         auto mgr = juce::ModalComponentManager::getInstance();
         if( mgr->cancelAllModalComponents() )
-            juce::Timer::callAfterDelay( 100, [this] { quit(); } );
+            juce::Timer::callAfterDelay( 100, [this] { systemRequestedQuit(); } );
         else
             quit();
     }

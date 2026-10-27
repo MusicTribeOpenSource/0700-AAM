@@ -26,6 +26,7 @@
 #include "PktMgr/PktMgr.hpp"
 #include <vector>
 #include <memory>
+#include <functional>
 
 namespace juce
 {
@@ -44,6 +45,12 @@ namespace contracts
         static sigslot::signal<std::shared_ptr<ipc::MTIPCJson>> sendCommandToDcl;
         static sigslot::signal<CPktMgr::HWMsg_t&>               createAndSendCommandToDcl;
         static sigslot::signal<CPktMgr::HWMsg_t&>               hardwareInputTriggered;
+        // Main-thread owners get first refusal. Releasing the lease restores the
+        // ordinary screen route; the newest active dialog has priority.
+        struct HardwareInputOwner { std::function<bool(CPktMgr::HWMsg_t&)> consume; };
+        using HardwareInputLease = std::shared_ptr<HardwareInputOwner>;
+        static HardwareInputLease claimHardwareInput(std::function<bool(CPktMgr::HWMsg_t&)>);
+        static void dispatchHardwareInput(CPktMgr::HWMsg_t&);
         // Todo: need to check whether the below signals should be defined here or in a UI module.
         static sigslot::signal<>    refreshPadLeds;
         static sigslot::signal<int> onMainModeTabSelected;

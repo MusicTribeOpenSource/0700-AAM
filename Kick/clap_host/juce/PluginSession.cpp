@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "PluginSession.h"
+#include <clap/ext/params.h>
 #include <cmath>
 
 namespace kick::clap {
@@ -92,6 +93,18 @@ void PluginSession::service() {
     // while retaining parameter telemetry and dirty state already applied there.
     Event event; while (processor.popOutput(event)) {}
     if (processor.faulted()) statusMessage = "Plugin stopped after a processing error";
+    // Coalesce edits into a bounded 250 ms window on the owning message thread.
+    // Mark the document dirty before the opaque snapshot is available so an
+    // autosave/close barrier cannot serialize the previous sound unnoticed.
+    const auto now = std::chrono::steady_clock::now();
+    if (processor.loaded() && processor.stateDirty()) {
+        state.setProperty("snapshotPending", true, nullptr);
+        if (snapshotDue == std::chrono::steady_clock::time_point{}) snapshotDue = now + std::chrono::milliseconds(250);
+        if (now >= snapshotDue) {
+            if (save()) snapshotDue = {};
+            else snapshotDue = now + std::chrono::seconds(2);
+        }
+    } else snapshotDue = {};
 }
 bool PluginSession::save() {
     if (!processor.loaded()) return true; // Preserve missing plugin state verbatim.
@@ -101,6 +114,9 @@ bool PluginSession::save() {
     juce::MemoryBlock snapshot(bytes.data(), bytes.size());
     state.setProperty("state", snapshot.toBase64Encoding(), nullptr);
     state.setProperty("path", loadedPath, nullptr); state.setProperty("pluginId", loadedId, nullptr);
+    state.removeProperty("snapshotPending", nullptr);
+    snapshotDue = {};
+    statusMessage = processor.faulted() ? "Plugin stopped after a processing error" : "Ready";
     return true;
 }
 void PluginSession::render(juce::AudioBuffer<float>& buffer) noexcept {
@@ -109,15 +125,26 @@ void PluginSession::render(juce::AudioBuffer<float>& buffer) noexcept {
     clap_event_transport_t transport{};
     transport.header = {sizeof(transport), 0, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_TRANSPORT, 0};
     transport.flags = CLAP_TRANSPORT_HAS_TEMPO | CLAP_TRANSPORT_HAS_BEATS_TIMELINE;
-    transport.tempo = tempo.load();
-    const auto revision = transportRevision.load();
-    if (revision != audioTransportRevision) { audioBeats = beats.load(); audioTransportRevision = revision; }
-    const bool isPlaying = playing.load();
-    if (isPlaying) transport.flags |= CLAP_TRANSPORT_IS_PLAYING;
+    // Bounded seqlock read: keep the previous coherent snapshot if a producer
+    // is publishing. The audio callback neither waits nor reads a mixed tuple.
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        const auto revision = transportRevision.load();
+        if (revision & 1u) continue;
+        const auto bpm = tempo.load();
+        const auto position = beats.load();
+        const auto running = playing.load();
+        if (revision != transportRevision.load()) continue;
+        if (revision != audioTransportRevision) {
+            audioBeats = position; audioTempo = bpm; audioPlaying = running; audioTransportRevision = revision;
+        }
+        break;
+    }
+    transport.tempo = audioTempo;
+    if (audioPlaying) transport.flags |= CLAP_TRANSPORT_IS_PLAYING;
     transport.song_pos_beats = static_cast<clap_beattime>(audioBeats * CLAP_BEATTIME_FACTOR);
     processor.process(nullptr, 0, buffer.getArrayOfWritePointers(), static_cast<uint32_t>(buffer.getNumChannels()),
                       static_cast<uint32_t>(buffer.getNumSamples()), nullptr, 0, &transport);
-    if (isPlaying) audioBeats += buffer.getNumSamples() / rate * transport.tempo / 60.;
+    if (audioPlaying) audioBeats += buffer.getNumSamples() / rate * transport.tempo / 60.;
 }
 void PluginSession::midi(const juce::MidiMessage& message) noexcept {
     if (message.isAllNotesOff() || message.isAllSoundOff()) { processor.panic(); return; }
@@ -128,7 +155,10 @@ void PluginSession::midi(const juce::MidiMessage& message) noexcept {
 }
 void PluginSession::setTransport(double bpm, double position, bool isPlaying) noexcept {
     if (!std::isfinite(bpm) || bpm <= 0 || !std::isfinite(position)) return;
-    tempo.store(bpm); beats.store(position); playing.store(isPlaying); transportRevision.fetch_add(1);
+    const std::lock_guard<std::mutex> writer(transportWriters);
+    transportRevision.fetch_add(1);
+    tempo.store(bpm); beats.store(position); playing.store(isPlaying);
+    transportRevision.fetch_add(1);
 }
 clap_id PluginSession::macro(int index) const {
     if (index < 0 || index >= 4) return CLAP_INVALID_ID;
@@ -138,9 +168,13 @@ void PluginSession::assignMacro(int index, clap_id id) {
     if (index >= 0 && index < 4) state.setProperty("macro" + juce::String(index), static_cast<juce::int64>(id), nullptr);
 }
 void PluginSession::adjustMacro(int index, double delta) {
+    if (!std::isfinite(delta) || delta == 0) return;
     const auto id = macro(index);
     for (const auto& parameter : processor.parameters()) if (parameter.id == id) {
-        processor.setParameter(id, processor.parameterValue(id) + delta * (parameter.maximum - parameter.minimum)); break;
+        const auto amount = (parameter.flags & CLAP_PARAM_IS_STEPPED)
+            ? std::copysign(std::max(1., std::round(std::abs(delta) * 127.)), delta)
+            : delta * (parameter.maximum - parameter.minimum);
+        processor.setParameter(id, processor.parameterValue(id) + amount); break;
     }
 }
 } // namespace kick::clap

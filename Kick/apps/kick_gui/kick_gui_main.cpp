@@ -206,11 +206,14 @@ public:
     //==============================================================================
     void systemRequestedQuit() override
     {
+        // Check while the UI and live programs still exist. A rejected save
+        // leaves the project open and its global error visible for recovery.
+        if (!mt::getAudioInterface().saveProject()) return;
         // This is called when the app is being asked to quit: you can ignore this request and let the app
         // carry on running, or call quit() to allow the app to close.
         auto mgr = juce::ModalComponentManager::getInstance();
         if( mgr->cancelAllModalComponents() )
-            juce::Timer::callAfterDelay( 100, [this] { quit(); } );
+            juce::Timer::callAfterDelay( 100, [this] { systemRequestedQuit(); } );
         else
             quit();
     }

@@ -152,6 +152,8 @@ namespace mt
     bool MTAudioInterface::loadProject( juce::File& ProjectFile ) { return manager->loadProject( ProjectFile ); }
     bool MTAudioInterface::closeProject() { return manager->closeProject(); }
     bool MTAudioInterface::saveProject() { return manager->saveProject(); }
+    juce::String MTAudioInterface::getProjectSaveError() const { return manager->getLastSaveError(); }
+    bool MTAudioInterface::isProjectDirty() const { return manager->isDirty(); }
 
     ///
     /// Selection API's

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 #include <PluginPanel.h>
-#include <input_events/input_events.h>
+#include <contracts/dcl/dcl_signals.h>
+#include <contracts/dcl/dcl_contracts_helper.h>
 
 namespace kick_ui {
 class ClapInstrumentPanel final : public kick::clap::PluginPanel {
@@ -9,8 +10,9 @@ public:
     explicit ClapInstrumentPanel(std::shared_ptr<kick::clap::PluginSession> session)
         : PluginPanel(std::move(session)) {
         juce::Component::SafePointer<ClapInstrumentPanel> safe(this);
-        hardware = Controls::InputEvents::dispatchHardwareEvent.connect([safe](CPktMgr::HWMsg_t& message) {
-            if (message.data.size() < 3 || !contracts::DclContractsHelper::isKnobMessage(message)) return;
+        hardware = contracts::DclSignals::claimHardwareInput([safe](CPktMgr::HWMsg_t& message) {
+            if (!safe || !safe->isShowing() || safe->getTopLevelComponent() != juce::Component::getCurrentlyModalComponent()) return false;
+            if (message.data.size() < 3 || !contracts::DclContractsHelper::isKnobMessage(message)) return false;
             const auto code = contracts::DclContractsHelper::getKnobCode(message);
             const auto value = contracts::DclContractsHelper::getKnobValue(message);
             int index = -1;
@@ -19,15 +21,14 @@ public:
                 case contracts::DeviceControlContracts::KnobSequence::EN_KNOB_2: index = 1; break;
                 case contracts::DeviceControlContracts::KnobSequence::EN_KNOB_3: index = 2; break;
                 case contracts::DeviceControlContracts::KnobSequence::EN_KNOB_4: index = 3; break;
-                default: return;
+                default: return false;
             }
-            juce::MessageManager::callAsync([safe, index, value] {
-                if (safe && safe->isShowing()) safe->adjustMacro(index, value / 127.0);
-            });
+            safe->adjustMacro(index, value / 127.0);
+            return true;
         });
     }
 private:
-    sigslot::scoped_connection hardware;
+    contracts::DclSignals::HardwareInputLease hardware;
 };
 inline void openClapInstrument(mt::MTIProgram* program) {
     if (auto* plugin = dynamic_cast<mt::MTClapProgram*>(program)) {
