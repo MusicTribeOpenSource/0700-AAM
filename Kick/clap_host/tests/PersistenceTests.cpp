@@ -5,6 +5,10 @@
 #include <atomic>
 #include <thread>
 #include <iostream>
+#if defined(__linux__) || defined(__APPLE__)
+ #include <csignal>
+ #include <sys/resource.h>
+#endif
 using namespace kick::clap;
 static void check(bool ok, const char* why) { if (!ok) { std::cerr << "FAIL: " << why << '\n'; std::exit(1); } }
 static void pump(int ms) { juce::MessageManager::getInstance()->runDispatchLoopUntil(ms); }
@@ -104,6 +108,35 @@ int main(int argc, char** argv) {
     check(heldDirectory.getChildFile("project.xml").loadFileAsString() == originalXml, "failed write preserves previous document bytes");
     check(ioDirectory.deleteFile() && heldDirectory.moveFileTo(ioDirectory), "restore directory");
     check(document.save() && document.close(), "disk failure retry succeeds");
+#if defined(__linux__) || defined(__APPLE__)
+    check(document.loadOrCreate(ioFile).isValid(), "reopen document for incomplete write");
+    const auto beforeShortWrite = ioFile.loadFileAsString();
+    document.getState().setProperty("large", juce::String::repeatedString("x", 8192), nullptr);
+    rlimit previousLimit{};
+    check(getrlimit(RLIMIT_FSIZE, &previousLimit) == 0, "read file-size limit");
+    auto limited = previousLimit; limited.rlim_cur = 1024;
+    const auto previousSignal = std::signal(SIGXFSZ, SIG_IGN);
+    check(setrlimit(RLIMIT_FSIZE, &limited) == 0, "force a partial project write");
+    const auto savedWithLimit = document.save();
+    check(setrlimit(RLIMIT_FSIZE, &previousLimit) == 0, "restore file-size limit");
+    std::signal(SIGXFSZ, previousSignal);
+    check(!savedWithLimit && document.isDirty() && ioFile.loadFileAsString() == beforeShortWrite,
+          "partial write fails and preserves the previous project bytes");
+    check(document.save() && document.close(), "save succeeds after write limit is removed");
+#endif
+    document.setAutoSave(true);
+    check(document.loadOrCreate(ioFile).isValid(), "reopen document for automatic disk retry");
+    document.getState().setProperty("retried", true, nullptr);
+    check(ioDirectory.moveFileTo(heldDirectory) && ioDirectory.replaceWithText("blocked parent"), "interrupt autosave storage");
+    const auto beforeFailure = errors;
+    pump(100);
+    check(errors > beforeFailure && document.isDirty(), "automatic write failure is reported");
+    check(ioDirectory.deleteFile() && heldDirectory.moveFileTo(ioDirectory), "restore autosave storage");
+    pump(150);
+    check(!document.isDirty() && document.getLastSaveError().isEmpty() &&
+          static_cast<bool>(juce::ValueTree::fromXml(ioFile.loadFileAsString()).getProperty("retried")),
+          "failed autosave retries after storage recovers without another edit");
+    check(document.close(), "close after automatic recovery");
     directory.deleteRecursively();
     std::cout << "PASS: actual KickXML autosave, close, worker save, bounded snapshots, failed/unsupported state, dirty/error reporting and retry\n";
 }

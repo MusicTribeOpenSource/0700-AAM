@@ -96,6 +96,9 @@ bool KickXML::failSave(const juce::String& message, SaveReason reason) {
     if (onDirtyChanged) onDirtyChanged(true);
     // Do not repeatedly open the same error dialog on every autosave retry.
     if (onSaveFailure && (changed || reason != SaveReason::Autosave)) onSaveFailure(message);
+    // saveOnMessageThread stops the timer before attempting the transaction.
+    // Keep retrying a failed autosave even if no further edit changes the tree.
+    if (reason == SaveReason::Autosave) triggerAsyncUpdate();
     return false;
 }
 bool KickXML::saveOnMessageThread(SaveReason reason) {
@@ -114,7 +117,18 @@ bool KickXML::saveOnMessageThread(SaveReason reason) {
     const auto xml = vt.toXmlString();
     if (xmlFile.loadFileAsString() != xml) {
         juce::TemporaryFile temporary(xmlFile);
-        if (!temporary.getFile().replaceWithText(xml) || !temporary.overwriteTargetFileWithTemporary())
+        bool written = false;
+        {
+            // JUCE's buffered flush can discard a short write without setting
+            // its status. Write directly so writeText reports incomplete data.
+            auto output = temporary.getFile().createOutputStream(0);
+            if (output && output->openedOk()) {
+                written = output->writeText(xml, false, false, nullptr);
+                output->flush();
+                written = written && output->getStatus().wasOk();
+            }
+        }
+        if (!written || !temporary.overwriteTargetFileWithTemporary())
             return failSave("Cannot write project: " + xmlFile.getFullPathName(), reason);
     }
     lastSaveError.clear(); dirty.store(false);

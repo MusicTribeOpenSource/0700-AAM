@@ -49,7 +49,7 @@ namespace contracts
 
         bool              keyPressed( const juce::KeyPress& key, juce::Component* originatingComponent ) override;
         bool              keyStateChanged( bool isKeyDown, juce::Component* originatingComponent ) override;
-        std::atomic<bool> shiftBtnState;
+        std::atomic<bool> shiftBtnState{false};
 
     };
 #else // implement  this class for other non windows platforms.

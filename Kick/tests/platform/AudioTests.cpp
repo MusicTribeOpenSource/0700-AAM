@@ -3,6 +3,10 @@
 #include <AudIO_juce/DeviceBlocks.h>
 #include "../../clap_host/tests/AllocationGuard.h"
 #include <iostream>
+#if defined(__linux__) || defined(__APPLE__)
+ #include <csignal>
+ #include <sys/resource.h>
+#endif
 static void check(bool ok, const char* why) { if (!ok) { std::cerr << "FAIL: " << why << '\n'; std::exit(1); } }
 template<class Condition> static bool waitFor(Condition ready) {
     const auto deadline = juce::Time::getMillisecondCounterHiRes() + 1000;
@@ -28,7 +32,16 @@ int main() {
     mt::SampleRecorder recorder(engine);
     AudIO::Buffer<float> block(2, true, 2, true);
     const auto frames = block.getBlockSize(); check(frames == 480, "released graph pool block size");
-    recorder.prepareToPlay(48000, frames); recorder.setLength(.01);
+    recorder.prepareToPlay(48000, frames);
+    bool lengthCallback = false;
+    recorder.onRecorderLengthChanged = [&](double seconds) {
+        check(seconds == .01 && recorder.getAudioBuffer().getNumSamples() == 0,
+              "length callback can read the freshly cleared recorder");
+        lengthCallback = true;
+    };
+    recorder.setLength(.01);
+    check(lengthCallback, "length callback is delivered after resizing");
+    recorder.onRecorderLengthChanged = {};
     const auto fill = [&](float l, float r) { std::fill_n(block.getInputBuffer(0), frames, l); std::fill_n(block.getInputBuffer(1), frames, r); };
     const auto render = [&] { forbidAllocation = true; recorder.process(block); forbidAllocation = false; };
     int started = 0, stopped = 0;
@@ -59,7 +72,24 @@ int main() {
     juce::WavAudioFormat wav;
     std::unique_ptr<juce::AudioFormatReader> reader(wav.createReaderFor(file.createInputStream().release(), true));
     check(reader && reader->lengthInSamples == 480 && reader->numChannels == 1 && reader->sampleRate == 48000, "WAV recording metadata and length");
-    reader.reset(); file.deleteFile();
+    reader.reset();
+#if defined(__linux__) || defined(__APPLE__)
+    juce::MemoryBlock previousRecording;
+    check(file.loadFileAsData(previousRecording), "read previous WAV bytes");
+    rlimit previousLimit{};
+    check(getrlimit(RLIMIT_FSIZE, &previousLimit) == 0, "read recording file-size limit");
+    auto limited = previousLimit; limited.rlim_cur = 1024;
+    const auto previousSignal = std::signal(SIGXFSZ, SIG_IGN);
+    check(setrlimit(RLIMIT_FSIZE, &limited) == 0, "force an incomplete WAV write");
+    recorder.save(file.getFullPathName());
+    check(setrlimit(RLIMIT_FSIZE, &previousLimit) == 0, "restore recording file-size limit");
+    std::signal(SIGXFSZ, previousSignal);
+    juce::MemoryBlock afterFailedSave;
+    check(recorder.lastError().isNotEmpty() && file.loadFileAsData(afterFailedSave) && afterFailedSave == previousRecording,
+          "buffered WAV write failure preserves the previous recording");
+    recorder.save(file.getFullPathName()); check(recorder.lastError().isEmpty(), "WAV save recovers after write failure");
+#endif
+    file.deleteFile();
     recorder.prepareToPlay(24000, frames);
     check(recorder.getAudioBuffer().getNumSamples() == 240, "device rate change preserves recording duration");
     recorder.undo(); recorder.redo();

@@ -20,6 +20,7 @@
  */
 
 #include "dcl_signals.h"
+#include "dcl_contracts_helper.h"
 #include <juce_events/juce_events.h>
 #include <algorithm>
 
@@ -42,10 +43,13 @@ DclSignals::HardwareInputLease DclSignals::claimHardwareInput(std::function<bool
     return owner;
 }
 void DclSignals::dispatchHardwareInput(CPktMgr::HWMsg_t& message) {
+    if (!DclContractsHelper::isValidHardwareInput(message)) return;
     if (!juce::MessageManager::getInstance()->isThisTheMessageThread()) {
         juce::MessageManager::callAsync([copy = message]() mutable { dispatchHardwareInput(copy); });
         return;
     }
+    if (DclContractsHelper::isButtonMessage(message) && DclContractsHelper::getButtonCode(message) == DeviceControlContracts::EN_SHIFT)
+        shiftBtnState.store(DclContractsHelper::getButtonState(message) != DeviceControlContracts::BTN_RELEASED);
     // Copy weak leases: callbacks may open/close dialogs while dispatching.
     const auto owners = inputOwners;
     for (auto it = owners.rbegin(); it != owners.rend(); ++it)

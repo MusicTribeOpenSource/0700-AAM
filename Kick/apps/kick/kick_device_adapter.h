@@ -56,7 +56,7 @@ public:
     {
         if( !message ) return;
         CPktMgr::HWMsg_t msg;
-        contracts::DclContractsHelper::ipcMessageToHWMessage( message, msg );
+        if (!contracts::DclContractsHelper::ipcMessageToHWMessage( message, msg )) return;
         /*juce::String log;
         log += "type " + juce::String( msg.pktType );
         log += " cmd " + juce::String( msg.pktCmd );
