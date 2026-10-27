@@ -1,3 +1,4 @@
+#include "kick_HardwareMode.h"
 /*
  * Copyright (c) 2021 MUSIC Tribe
  *
@@ -50,6 +51,7 @@ namespace mt
 
     bool I2CDevice::openDevice()
     {
+        if (!hardwareEnabled()) return false;
 #if( JUCE_LINUX || __linux__ )
         file_ = open( devicePath_.c_str(), O_RDWR );
         if( file_ < 0 )

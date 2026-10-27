@@ -24,6 +24,21 @@
 
 juce::File getAppDirs( DirType T )
 {
+    const auto resource = juce::SystemStats::getEnvironmentVariable("KICK_RESOURCE_ROOT", {});
+    const auto data = juce::SystemStats::getEnvironmentVariable("KICK_DATA_ROOT", {});
+    if (resource.isNotEmpty()) {
+        const auto root = juce::File::getCurrentWorkingDirectory().getChildFile(resource);
+        if (T == MTAssets) return root.getChildFile("assets");
+        if (T == MTTemp) return root.getChildFile("templates");
+        if (T == MTDemos) return root.getChildFile("demos");
+    }
+    if (data.isNotEmpty()) {
+        const auto root = juce::File::getCurrentWorkingDirectory().getChildFile(data);
+        if (T == MTPrefs) return root.getChildFile("prefs");
+        if (T == MTProjects) return root.getChildFile("projects");
+        if (T == MTLog) return root.getChildFile("logs");
+        if (T == MTSamples) return root.getChildFile("sounds");
+    }
     auto seprator = juce::File::getSeparatorString();
 #if defined( _WIN32 ) || defined( _WIN64 )
     auto rootP = juce::File::getSpecialLocation( juce::File::currentApplicationFile ).getParentDirectory().getFullPathName() + seprator;

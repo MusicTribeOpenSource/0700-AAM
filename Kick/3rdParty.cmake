@@ -1,113 +1,76 @@
+# The full application uses the released sibling platform sources and JUCE 7.
+# The independent CLAP host also supports JUCE 8.
+set(JUCE_GIT_TAG 7.0.12)
+set(PERFETTO_GIT_TAG origin/main)
+set(KICK_JUCE_PATH "" CACHE PATH "Existing JUCE 7.0.12 source tree")
+if(KICK_JUCE_PATH)
+    get_filename_component(JUCE_SOURCE_DIR "${KICK_JUCE_PATH}" ABSOLUTE)
+else()
+    CPMAddPackage(NAME JUCE GITHUB_REPOSITORY juce-framework/JUCE GIT_TAG ${JUCE_GIT_TAG} DOWNLOAD_ONLY True)
+endif()
+if(NOT EXISTS "${JUCE_SOURCE_DIR}/CMakeLists.txt")
+    message(FATAL_ERROR "JUCE was not found; set KICK_JUCE_PATH to JUCE 7.0.12")
+endif()
+file(READ "${JUCE_SOURCE_DIR}/modules/juce_core/system/juce_StandardHeader.h" _kick_juce_version)
+foreach(_part MAJOR MINOR)
+    string(REGEX MATCH "#define JUCE_${_part}_VERSION[ \t]+([0-9]+)" _unused "${_kick_juce_version}")
+    set(_kick_${_part} "${CMAKE_MATCH_1}")
+endforeach()
+# JUCE names the patch component JUCE_BUILDNUMBER rather than *_VERSION.
+string(REGEX MATCH "#define JUCE_BUILDNUMBER[ \t]+([0-9]+)" _unused "${_kick_juce_version}")
+if(NOT "${_kick_MAJOR}.${_kick_MINOR}.${CMAKE_MATCH_1}" STREQUAL "7.0.12")
+    message(FATAL_ERROR "The full KICK app requires JUCE 7.0.12 (the standalone CLAP host supports 7 and 8)")
+endif()
 
-##
-## Repo paths.
-##
-# Base URL of the git server hosting the AudIO and ComProtocol repositories.
-# These were internal repositories and are not part of this release; override with
-#   -DMT_PLATFORM_GIT_PATH=<your git base url>
-set(MT_PLATFORM_GIT_PATH   "https://example.com/your-git-server" CACHE STRING "Base URL for private platform repositories")
-
-##
-## 3RD Party git repo tags
-##
-#set(JUCE_GIT_TAG           19ba6bf1935f570f97f0b63777b69dcaf0327b58) # 15-Aug-23
-set(JUCE_GIT_TAG           7.0.12)
-set(PERFETTO_GIT_TAG       origin/main)
-set(AUDIO_GIT_TAG          8999ab9ba138121d7d038b80a817b1b5cff3980c)
-set(COM_PROTOCOL_GIT_TAG   d00bb9c8a590d3677bd9f400eb7a22d38acf4bfa)
-
-##
-## JUCE
-##
-# IF you want to instead point it to a local version, you can invoke CMake with  -DCPM_JUCE_SOURCE="Path_To_JUCE_git_repo"
-# Define the patch file based on the JUCE version tag
-set(JUCE_PATCH_FILE "${CMAKE_SOURCE_DIR}/patches/juce_multitouch_${JUCE_GIT_TAG}.patch")
-
-CPMAddPackage( 
-    NAME JUCE
-    GITHUB_REPOSITORY juce-framework/JUCE
-    GIT_TAG ${JUCE_GIT_TAG}
-    DOWNLOAD_ONLY True
-    OPTIONS "JUCE_MODULES_ONLY ON" 
-)
-
-# Check if JUCE was added and apply patch
-if(JUCE_ADDED)
-    message(STATUS "Downloaded JUCE repository into \"${JUCE_SOURCE_DIR}\"")
-
-    # Check if the patch file exists
-    if(EXISTS ${JUCE_PATCH_FILE})
-        message("### Patch file found..${JUCE_PATCH_FILE}")
-    else()
-        message(WARNING "### No patch file found for JUCE version ${JUCE_GIT_TAG}")
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # Never patch a caller's checkout or the shared CPM cache in place.
+    set(_kick_juce_stage "${CMAKE_BINARY_DIR}/_deps/kick-juce-multitouch")
+    get_filename_component(_kick_source_real "${JUCE_SOURCE_DIR}" REALPATH)
+    get_filename_component(_kick_build_real "${CMAKE_BINARY_DIR}" REALPATH)
+    file(RELATIVE_PATH _stage_relative "${_kick_source_real}" "${_kick_build_real}/_deps/kick-juce-multitouch")
+    if(NOT _stage_relative MATCHES "^\\.\\.")
+        message(FATAL_ERROR "Place the build directory outside the JUCE source tree")
     endif()
-    
-    # Flag for Patch applied.
-    set(PATCH_FLAG_FILE "${JUCE_SOURCE_DIR}/juce_patch_applied.flag")
-    # Check if patch is already applied
-    if(NOT EXISTS ${PATCH_FLAG_FILE})
-	    # Apply patch to JUCE
-	    execute_process(
-		    COMMAND git apply ${JUCE_PATCH_FILE}
-		    WORKING_DIRECTORY ${JUCE_SOURCE_DIR}
-		    RESULT_VARIABLE patch_result
-		    )
-	    if(patch_result)
-		    message(FATAL_ERROR "Failed to apply patch to JUCE: ${patch_result}")
-	    else()
-		    message(STATUS "## Patch applied successfully to JUCE.")
-		    file(WRITE ${PATCH_FLAG_FILE} "JUCE patch applied")
-	    endif()
-    else()
-	    message(STATUS "### Patch already applied to JUCE. Skipping patch step.")
+    set(_kick_patch "${CMAKE_CURRENT_LIST_DIR}/patches/juce_multitouch_7.0.12.patch")
+    file(SHA256 "${_kick_patch}" _patch_hash)
+    set(_stage_key "${JUCE_SOURCE_DIR}\n${_patch_hash}\n")
+    set(_old_key "")
+    if(EXISTS "${_kick_juce_stage}/.kick-owned-stage")
+        file(READ "${_kick_juce_stage}/.kick-owned-stage" _old_key)
+    elseif(EXISTS "${_kick_juce_stage}")
+        message(FATAL_ERROR "Refusing to replace an unowned JUCE staging directory: ${_kick_juce_stage}")
     endif()
-
-    add_subdirectory(${JUCE_SOURCE_DIR} ./cmake_build_juce)
+    if(NOT _stage_key STREQUAL _old_key)
+        if(_old_key)
+            file(REMOVE_RECURSE "${_kick_juce_stage}")
+        endif()
+        file(MAKE_DIRECTORY "${_kick_juce_stage}")
+        file(COPY "${JUCE_SOURCE_DIR}/" DESTINATION "${_kick_juce_stage}" PATTERN ".git" EXCLUDE PATTERN "juce_patch_applied.flag" EXCLUDE)
+        find_package(Git REQUIRED)
+        execute_process(COMMAND "${GIT_EXECUTABLE}" apply --check "${_kick_patch}" WORKING_DIRECTORY "${_kick_juce_stage}" RESULT_VARIABLE _patch_check OUTPUT_QUIET ERROR_QUIET)
+        if(_patch_check EQUAL 0)
+            execute_process(COMMAND "${GIT_EXECUTABLE}" apply "${_kick_patch}" WORKING_DIRECTORY "${_kick_juce_stage}" RESULT_VARIABLE _patch_result)
+            if(NOT _patch_result EQUAL 0)
+                message(FATAL_ERROR "Failed to apply the JUCE multitouch patch")
+            endif()
+        else()
+            execute_process(COMMAND "${GIT_EXECUTABLE}" apply --reverse --check "${_kick_patch}" WORKING_DIRECTORY "${_kick_juce_stage}" RESULT_VARIABLE _already_applied OUTPUT_QUIET ERROR_QUIET)
+            if(NOT _already_applied EQUAL 0)
+                message(FATAL_ERROR "The JUCE multitouch patch neither applies nor matches this source")
+            endif()
+        endif()
+        file(WRITE "${_kick_juce_stage}/.kick-owned-stage" "${_stage_key}")
+    endif()
+    set(JUCE_SOURCE_DIR "${_kick_juce_stage}")
 endif()
+add_subdirectory("${JUCE_SOURCE_DIR}" cmake_build_juce)
 
-##
-## AudIO
-##
-# IF you want to instead point it to a local version, you can invoke CMake with  -DCPM_AudIO_SOURCE="Path_To_AudIO_git_repo"
-if(AUDIO_DEVELOPMENT)
-    message(STATUS "Using local sources for AudIO...")
-    if (MSVC)
-        message(STATUS "MSVC")
-        CPMAddPackage( NAME AudIO DOWNLOAD_ONLY True SOURCE_DIR D:/azure/AudIO )
-    endif (MSVC)
-    if (UNIX)
-        message(STATUS "UNIX")
-        CPMAddPackage( NAME AudIO DOWNLOAD_ONLY True SOURCE_DIR /mnt/c/azure/AudIO )
-    endif (UNIX)
-else(AUDIO_DEVELOPMENT)
-    message(STATUS "Using GIT sources for AudIO")
-    CPMAddPackage( 
-        NAME AudIO
-        GIT_REPOSITORY ${MT_PLATFORM_GIT_PATH}/AudIO 
-        GIT_TAG ${AUDIO_GIT_TAG}
-        DOWNLOAD_ONLY True
-    )
-endif(AUDIO_DEVELOPMENT)
-
-if(AudIO_ADDED)	 
-    message(STATUS "Added AudIO package into \"${AudIO_SOURCE_DIR}\"")
-    include(${AudIO_SOURCE_DIR}/juce_modules.cmake)
-endif()
-
-##
-## COM Protocol
-##
-CPMAddPackage( 
-        NAME COM_PROTOCOL
-        GIT_REPOSITORY ${MT_PLATFORM_GIT_PATH}/ComProtocol 
-        GIT_TAG ${COM_PROTOCOL_GIT_TAG}
-        DOWNLOAD_ONLY True
-    )
-
-if(COM_PROTOCOL_ADDED)	 
-    message(STATUS "Added Com Protocol package into \"${COM_PROTOCOL_SOURCE_DIR}\"")
-    juce_add_modules(${COM_PROTOCOL_SOURCE_DIR}/PktMgr)
-endif()
+# Released sibling sources are the default; overrides remain explicit/local.
+set(KICK_AUDIO_SOURCE "${CMAKE_CURRENT_LIST_DIR}/../AudIO" CACHE PATH "AudIO source tree")
+set(KICK_PROTOCOL_SOURCE "${CMAKE_CURRENT_LIST_DIR}/../ComProtocol" CACHE PATH "ComProtocol source tree")
+include("${KICK_AUDIO_SOURCE}/juce_modules.cmake")
+juce_add_modules("${KICK_PROTOCOL_SOURCE}/juce/PktMgr")
+target_include_directories(PktMgr INTERFACE "${KICK_PROTOCOL_SOURCE}")
 
 ##
 ## Perfetto Profiler

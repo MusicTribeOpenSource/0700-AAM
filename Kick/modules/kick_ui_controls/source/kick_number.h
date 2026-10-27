@@ -242,7 +242,8 @@ namespace ui
             {
                 isEditing = true;
 
-                static KickNumPad<Type> pad{ 0, 1, 1 };
+                KickLooknFeel::getLnf();
+                static auto& pad = *new KickNumPad<Type>{ 0, 1, 1 };
                 pad.setValueBounds( min_, max_, val_, step_ );
                 pad.show( getTitle(), [&]( int R ) {
                     isEditing = false;
@@ -305,6 +306,7 @@ namespace ui
     class KickNumPad
         : public KickControlBase<juce::Component>
         , public mt::MTProperties
+        , public juce::DeletedAtShutdown
     {
     public:
         explicit KickNumPad( Type min, Type max, Type defaultVal, Type stepSize = 1 )

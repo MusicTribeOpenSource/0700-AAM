@@ -29,12 +29,15 @@ namespace kick_ui
     class AppStatusbar;
     class KickHome : public juce::Component
         , private juce::AsyncUpdater
+        , private mt::MTAudioInterfaceListener
     {
     public:
         static KickHome& Instance()
         {
-            static KickHome _instance;
-            return _instance;
+            // HomeWindow owns the component; retain only a weak reference here.
+            static juce::Component::SafePointer<KickHome> instance;
+            if (!instance) instance = new KickHome;
+            return *instance;
         }
 
         inline Screen getCurrentScreen() const { return currentScreen; }
@@ -52,6 +55,8 @@ namespace kick_ui
         void                 knobCommand( int knob, int value );
         void                 resized() override;
         void                 handleAsyncUpdate() override;
+        void                 onProjectSaveFailed(const juce::String&) override;
+        void                 onProjectDirtyChanged(bool) override;
         inline void          setupLoadScreenVisibility();
         juce::Rectangle<int> getScreenBounds( IScreen* pScreen );
 

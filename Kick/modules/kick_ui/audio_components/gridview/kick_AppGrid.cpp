@@ -475,6 +475,7 @@ namespace kick_ui
                 notesComp.setType( NotesView::Type::Drum );
                 break;
             case mt::MTProgramType::Keygroup:
+            case mt::MTProgramType::Plugin:
             case mt::MTProgramType::Midi:
             case mt::MTProgramType::Cv:
                 viewType = GridViewType::MidiView;

@@ -6,7 +6,7 @@
 
 namespace AudIO
 {
-    static uint32_t audioObjectId{ 1 };
+    inline std::atomic<uint32_t> audioObjectId{ 1 };
 
     class Object : public IProcessable
     {

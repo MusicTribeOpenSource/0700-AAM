@@ -14,7 +14,7 @@
   website:
   license:            AGPLv3
 
-  dependencies:       signal, fpm, magic_enum, AudIO_constants, juce_gui_basics
+  dependencies:       signal, fpm, magic_enum, AudIO_constants, juce_gui_basics, juce_audio_basics
 
  END_JUCE_MODULE_DECLARATION
 
@@ -30,6 +30,7 @@
     #include <magic_enum/magic_enum.hpp>
     #include <AudIO_constants/AudIO_constants.h>
     #include <juce_gui_basics/juce_gui_basics.h>
+    #include <juce_audio_basics/juce_audio_basics.h>
 
     #ifdef PERFETTO
         #include <melatonin_perfetto/melatonin_perfetto.h>

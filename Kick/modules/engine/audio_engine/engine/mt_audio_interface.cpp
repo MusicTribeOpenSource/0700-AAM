@@ -125,8 +125,9 @@ namespace mt
     // API definitions
     MTAudioInterface& getAudioInterface()
     {
-        static MTAudioInterface _audioInterface( ProjectInfo::projectName, ProjectInfo::companyName, ProjectInfo::versionString );
-        return _audioInterface;
+        // Destroy before JUCE shuts down its device, MIDI and message services.
+        static auto* audioInterface = new MTAudioInterface( ProjectInfo::projectName, ProjectInfo::companyName, ProjectInfo::versionString );
+        return *audioInterface;
     }
 
     MTAudioInterface::MTAudioInterface( const char* Name, const char* Manufacturer, const char* Version )
@@ -152,6 +153,8 @@ namespace mt
     bool MTAudioInterface::loadProject( juce::File& ProjectFile ) { return manager->loadProject( ProjectFile ); }
     bool MTAudioInterface::closeProject() { return manager->closeProject(); }
     bool MTAudioInterface::saveProject() { return manager->saveProject(); }
+    juce::String MTAudioInterface::getProjectSaveError() const { return manager->getLastSaveError(); }
+    bool MTAudioInterface::isProjectDirty() const { return manager->isDirty(); }
 
     ///
     /// Selection API's

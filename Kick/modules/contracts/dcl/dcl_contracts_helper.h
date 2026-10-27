@@ -49,6 +49,9 @@ namespace contracts
     class DclContractsHelper
     {
     public:
+        // Incoming events must satisfy the payload sizes used by UI consumers.
+        // Pad aftertouch is optional; command packets may legitimately be empty.
+        static bool isValidHardwareInput( const CPktMgr::HWMsg_t& hwMsg );
         static bool isShiftPressed();
         static void setHalfLevel( bool state );
         static bool isHalfLevel();
@@ -94,7 +97,7 @@ namespace contracts
         static int getSwUpdateCode( const CPktMgr::HWMsg_t& hwMsg );
 
         static void                            hWMessageToIPCMessage( const CPktMgr::HWMsg_t& hwMessage, std::shared_ptr<ipc::MTIPCJson> ipcMessage );
-        static void                            ipcMessageToHWMessage( std::shared_ptr<ipc::MTIPCJson> ipcMessage, CPktMgr::HWMsg_t& hwMessage );
+        static bool                            ipcMessageToHWMessage( std::shared_ptr<ipc::MTIPCJson> ipcMessage, CPktMgr::HWMsg_t& hwMessage );
         static std::shared_ptr<ipc::MTIPCJson> prepareHWMessage( const int pktType, const int pktDir, const int pktCmd, const std::vector<int>& data = std::vector<int>() );
 
         static std::shared_ptr<ipc::MTIPCJson> reconnectMessage();

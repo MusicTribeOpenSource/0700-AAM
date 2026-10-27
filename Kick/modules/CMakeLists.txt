@@ -4,6 +4,7 @@ juce_add_modules(
     common
     hardware
     input_events
+    serial_port
     kick_ui
     kick_ui_channel_mixer
     kick_ui_common
@@ -22,3 +23,6 @@ juce_add_modules(
 add_subdirectory(3rdParty)
 add_subdirectory(engine)
 
+
+target_compile_definitions(hardware INTERFACE KICK_ENABLE_HARDWARE=$<BOOL:${KICK_ENABLE_HARDWARE}>)
+target_compile_definitions(input_events INTERFACE KICK_ENABLE_HARDWARE=$<BOOL:${KICK_ENABLE_HARDWARE}>)

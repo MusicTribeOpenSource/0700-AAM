@@ -1,4 +1,5 @@
-﻿/*
+#include "kick_HardwareMode.h"
+/*
  * Copyright (c) 2021 MUSIC Tribe
  *
  * This file is part of Kick.
@@ -84,6 +85,7 @@ namespace mt
 
     std::string HwPref::executeCommand( const std::string& command )
     {
+        if (!hardwareEnabled()) return {};
         std::string result = "";
 #if( JUCE_LINUX || __linux__ )
         char buffer[128];
@@ -109,6 +111,7 @@ namespace mt
 
     int HwPref::executeSetCommand( const std::string& command )
     {
+        if (!hardwareEnabled()) return -1;
         int result = 0;
 #if( JUCE_LINUX || __linux__ )
         result = std::system( command.c_str() );
@@ -215,6 +218,7 @@ namespace mt
 
     bool HwPref::extractImage( std::string path )
     {
+        if (!hardwareEnabled()) return false;
         bool        status         = true;
         std::string imageFormat    = ".swu";
         std::string creatFolderCmd = "mkdir " + path;
@@ -463,6 +467,7 @@ namespace mt
 
     bool HwPref::removeHeaderFromImage( std::string fwfilepath )
     {
+        if (!hardwareEnabled()) return false;
         std::string cmd = "tail -c +" + std::to_string( fw_ver_index ) + " " + fwfilepath + " > " + decrptionDir + fwHeaderFile;
         DBG( "removing Header from image" << cmd );
         int result = system( cmd.c_str() ); // Execute the command using system call
@@ -489,6 +494,7 @@ namespace mt
 
     bool HwPref::decryptopenSSLImage( std::string fwfilepath )
     {
+        if (!hardwareEnabled()) return false;
         bool        status        = false;
         std::string outFwfilepath = decrptionDir + decryptedFwname;
         std::string inFwfilepath  = decrptionDir + fwHeaderFile;
@@ -610,6 +616,7 @@ namespace mt
 
     bool HwPref::ethernetEnable( bool status )
     {
+        if (!hardwareEnabled()) return false;
 #if( JUCE_LINUX || __linux__ )
         std::string command = status ? "ifconfig eth0 up" : "ifconfig eth0 down";
         int         result  = system( command.c_str() ); // Execute the command using system call
@@ -816,6 +823,7 @@ namespace mt
 
     int HwPref::setTimeZone( juce::String& str )
     {
+        if (!hardwareEnabled()) return 0;
 #if defined( __linux__ ) || defined( __linux ) || defined( linux )
         std::string cmd = "timedatectl set-timezone " + str.toStdString();
         int         ret = system( cmd.c_str() );
@@ -832,6 +840,7 @@ namespace mt
 
     int HwPref::setBrightness( int value )
     {
+        if (!hardwareEnabled()) return 0;
 #if defined( __linux__ ) || defined( __linux ) || defined( linux )
         if( value < 20 )
         {
@@ -927,6 +936,7 @@ namespace mt
 
     void HwPref::setDate( int day, int month, int year )
     {
+        if (!hardwareEnabled()) return;
         //date - s "2024-05-15"
         std::string cmd = std::to_string( year ) + "-" + std::to_string( month ) + "-" + std::to_string( day );
         DBG( "Setting Day -> " << cmd );
@@ -945,6 +955,7 @@ namespace mt
 
     void HwPref::setTime( int hour, int minute )
     {
+        if (!hardwareEnabled()) return;
         std::string cmd = std::to_string( hour ) + ":" + std::to_string( minute ) + ":00";
         DBG( "Setting Day -> " << cmd );
         // Execute the command

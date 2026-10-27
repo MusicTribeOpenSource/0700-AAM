@@ -45,7 +45,14 @@ namespace mt
 #if JUCE_LINUX || JUCE_BSD || JUCE_MAC || JUCE_IOS
         for( auto i = 0; i < 8; ++i )
         {
-            juce::MidiOutput::createNewDevice( "Kick:Out:" + juce::String( i + 1 ) );
+            auto device = juce::MidiOutput::createNewDevice( "Kick:Out:" + juce::String( i + 1 ) );
+            if (!device) {
+                // A missing backend cannot create any of the remaining ports.
+                // Repeated attempts also assert inside JUCE's ALSA client.
+                juce::Logger::writeToLog("Virtual MIDI outputs are unavailable");
+                break;
+            }
+            virtualOutputs.push_back(std::move(device));
         }
 #endif
 
@@ -68,6 +75,7 @@ namespace mt
 
         midiInputs.clear();
         midiOutputs.clear();
+        virtualOutputs.clear();
     }
 
     int                              MTMidiDeviceManager::getNumMidiInputDevices() noexcept { return midiInputs.size(); }

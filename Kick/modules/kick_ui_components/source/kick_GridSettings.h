@@ -11,13 +11,14 @@ namespace ui
         Page
     };
 
-    class GridSettings : public juce::Component
+    class GridSettings : public juce::Component, public juce::DeletedAtShutdown
     {
     public:
         static GridSettings& Instance()
         {
-            static GridSettings gridSettings;
-            return gridSettings;
+            KickLooknFeel::getLnf();
+            static auto* gridSettings = new GridSettings;
+            return *gridSettings;
         }
 
         enum ScreenType

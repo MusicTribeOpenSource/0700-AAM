@@ -100,6 +100,8 @@ namespace QUANTIZE
 
 namespace EMPTY
 {
+    inline const juce::String String{};
+    inline const juce::AudioBuffer<float> SampleBuffer{};
     static const juce::ValueTree VTState{};
 }
 

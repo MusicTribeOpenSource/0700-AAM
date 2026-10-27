@@ -48,7 +48,7 @@ namespace kick_ui
         void mouseDown( const juce::MouseEvent& e ) override;
     };
 
-    class AppStatusbar : public juce::Component
+    class AppStatusbar : public juce::Component, public juce::DeletedAtShutdown
     {
     public:
         ~AppStatusbar() = default;

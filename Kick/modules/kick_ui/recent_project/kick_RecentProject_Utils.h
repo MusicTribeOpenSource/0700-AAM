@@ -11,8 +11,8 @@ namespace ui
 
         static LoadProjectAndAnimation& getInstance()
         {
-            static LoadProjectAndAnimation instance;
-            return instance;
+            static auto* instance = new LoadProjectAndAnimation;
+            return *instance;
         }
 
         void startLoading( juce::File project );

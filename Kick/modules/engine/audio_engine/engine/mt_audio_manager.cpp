@@ -33,6 +33,23 @@ namespace mt
         , MTIPadPerformanceData( juce::ValueTree{ IDs::PERFORMANCE }, nullptr )
     {
         juce::ignoreUnused( PrjName, PrjManufacturer, PrjVersion );
+        prepareSave = [this] {
+            juce::String failures;
+            forAllPrograms([&](MTIProgram* program) {
+                if (!program->prepareToSave()) {
+                    const auto plugin = program->getState().getChildWithName("CLAP").getProperty("name").toString();
+                    failures += "Program '" + program->getName() + "'" +
+                                (plugin.isEmpty() ? juce::String{} : " (" + plugin + ")") + ": " + program->saveError() + "\n";
+                }
+            });
+            return failures.isEmpty() ? juce::Result::ok() : juce::Result::fail(failures);
+        };
+        onSaveFailure = [this](const juce::String& reason) {
+            listeners.call([&](MTAudioInterfaceListener& listener) { listener.onProjectSaveFailed(reason); });
+        };
+        onDirtyChanged = [this](bool dirty) {
+            listeners.call([&](MTAudioInterfaceListener& listener) { listener.onProjectDirtyChanged(dirty); });
+        };
 
         //juce::MessageManager::callAsync( [&]() {
         // Audio previwer object...
@@ -138,13 +155,21 @@ namespace mt
 
     MTAudioManager::~MTAudioManager()
     {
-        MTAudioRecorderManager::closeRecorder();
-        internalTimer.stopTimer();
-        _previewer = nullptr;
-
-        MTAudioTransportManager::stop();
+        // No callback may retain recorder/program objects while they are freed.
         engine.stopAudioDevice();
+        internalTimer.stopTimer();
+        // The application's views have already gone away. Destruction must not
+        // publish transport notifications to their signal callbacks.
+        listeners.clear();
+        transportStateChanged = {};
+        MTAudioTransportManager::stop();
         closeProject();
+        MTAudioRecorderManager::closeRecorder();
+        _previewer = nullptr;
+        // Base destruction happens after the live program manager is gone.
+        // A failed shutdown save must not be replaced with stale XML later.
+        detachWithoutSaving();
+        prepareSave = {}; onSaveFailure = {}; onDirtyChanged = {};
     }
 
     ////////////////////////////
@@ -153,10 +178,11 @@ namespace mt
     bool MTAudioManager::loadProject( juce::File& ProjectFile )
     {
         //DBG( "LP: Enter FM: " << engine.getFeeMemory() );
-        closeProject();
+        if (!closeProject()) return false;
         //DBG( "LP: FM2: " << engine.getFeeMemory() );
         undoManager.clearUndoHistory();
         vTree = projectManager::loadOrCreate( ProjectFile );
+        if (!vTree.isValid()) return false;
 
 #if defined( USE_VALUE_TREE_DEBUGGER ) && ( USE_VALUE_TREE_DEBUGGER > 0 )
         debugger.setSource( vTree );
@@ -206,6 +232,10 @@ namespace mt
 
     bool MTAudioManager::closeProject()
     {
+        if (!projectLoaded) return true;
+        // Persist while the programs still exist. On failure the active project,
+        // playback and selection remain available for recovery and retry.
+        if (!projectManager::close()) return false;
         internalTimer.stopTimer();
         projectLoaded = false;
         MTAudioTransportManager::close();
@@ -217,7 +247,6 @@ namespace mt
         selected = { -1, -1, -1 };
 
         // Save and close project first...
-        projectManager::close();
         vTree = juce::ValueTree{ IDs::ROOT };
 
         // Now close rest of the things...
@@ -243,8 +272,7 @@ namespace mt
 
     bool MTAudioManager::saveProject()
     {
-        projectManager::save();
-        return true;
+        return projectManager::save();
     }
     ////////////////////////////
     //// Undo/Redo..

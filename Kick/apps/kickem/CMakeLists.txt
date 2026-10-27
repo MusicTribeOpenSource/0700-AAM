@@ -41,7 +41,7 @@ target_compile_definitions(${TargetName}
         SIM_BUILD=1
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
-        JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:${TargetName},JUCE_PROJECT_NAME>"
+        JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:${TargetName},JUCE_PRODUCT_NAME>"
         JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:${TargetName},JUCE_VERSION>"
 
         JUCER_ENABLE_GPL_MODE=0
@@ -95,3 +95,6 @@ if(USE_ASAN_KICK)
    target_compile_options(${TargetName}  PRIVATE /Od)
    set(addressSanitizerEnabled true)
 endif()
+
+# Install the isolated CLAP scan worker beside the host executable.
+kick_bundle_clap_scanner(${TargetName})
