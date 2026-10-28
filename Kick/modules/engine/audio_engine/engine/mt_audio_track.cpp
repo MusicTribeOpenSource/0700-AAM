@@ -297,7 +297,9 @@ namespace mt
                 if( !isTrackEffectivelyMuted() && CommonUtils::isValidMidiNote( noteNo ) )
                 {
                     // Check probability of playback.
-                    auto rand = AudIO::utils::random<int>( PROBABILITY::MIN, PROBABILITY::MAX );
+                    // random() includes both ends. Roll 1..MAX so a probability of 0 never plays,
+                    // MAX always plays, and any other value plays exactly that many times in MAX.
+                    auto rand = AudIO::utils::random<int>( PROBABILITY::MIN + 1, PROBABILITY::MAX );
                     if( rand <= it->probability.get() )
                     {
                         int noteVelocity = getEffectiveNoteVelocity( it->velocity.get() );
