@@ -8,6 +8,32 @@ namespace kick_ui
 
     void GridPencilTool::paint( juce::Graphics& g )
     {
+        if( !selectRect.isEmpty() )
+        {
+            g.setColour( ui::Theme::selectionColour( 1 ) );
+            g.drawRect( selectRect, 1.5f );
+        }
+    }
+
+    void GridPencilTool::mouseDown( const juce::MouseEvent& event )
+    {
+        IGridTool::mouseDown( event );
+        shiftAtDown = contracts::DclContractsHelper::isShiftPressed();
+        selectRect  = {};
+    }
+
+    void GridPencilTool::selectInRectangle( const juce::MouseEvent& event )
+    {
+        selectRect = juce::Rectangle<float>( event.mouseDownPosition, event.position ).getIntersection( gridComp.getLocalBounds().toFloat() );
+
+        auto start = gridData.getTimeFromX( selectRect.getX(), false );
+        auto end   = gridData.getTimeFromX( selectRect.getRight(), false );
+        mt::NotesInRange range( gridData.getNoteFromY( selectRect.getY() ), gridData.getNoteFromY( selectRect.getBottom() ), start, end );
+        ae.selectAllNotes( false );
+        ae.selectNotesInRange( range, true );
+
+        gridNeedsToMove( (int)event.position.getX(), (int)event.position.getY() );
+        gridNeedsRepaint();
     }
 
     void GridPencilTool::drawInfoBar( int noteNum, int startTime, juce::MouseEvent event )
@@ -24,6 +50,13 @@ namespace kick_ui
 
     void GridPencilTool::mouseDrag( const juce::MouseEvent& event )
     {
+        if( shiftAtDown && 0 >= mDownNoteID )
+        {
+            if( event.mouseWasDraggedSinceMouseDown() )
+                selectInRectangle( event );
+            return;
+        }
+
         if( event.mouseWasDraggedSinceMouseDown() )
         {
             auto noteNum  = gridData.getNoteFromY( event.position.getY() );
@@ -90,6 +123,25 @@ namespace kick_ui
     void GridPencilTool::mouseUp( const juce::MouseEvent& event )
     {
         gridComp.infoBar.hideTip();
+
+        if( shiftAtDown && ( event.mouseWasClicked() || 0 >= mDownNoteID ) )
+        {
+            // Shift + tap deletes the note (or clears the selection on an empty spot);
+            // the rectangle selection is already done. Dragging a note still moves it.
+            if( event.mouseWasClicked() )
+            {
+                if( 0 < mDownNoteID )
+                    ae.eraseNote( mDownNoteNum, mDownTime, -1 );
+                else
+                    ae.selectAllNotes( false );
+            }
+            shiftAtDown = false;
+            selectRect  = {};
+            isLeftEdge  = false;
+            gridNeedsRepaint();
+            return;
+        }
+        shiftAtDown = false;
 
         if( event.mouseWasClicked() )
         {

@@ -28,6 +28,7 @@ namespace kick_ui
         GridPencilTool( GridComponent& gridComponent, GridData& data, juce::Viewport& ViewPort );
         void paint( juce::Graphics& g );
 
+        void mouseDown( const juce::MouseEvent& event ) override;
         void mouseDrag( const juce::MouseEvent& event );
         void mouseUp( const juce::MouseEvent& event ) override;
         void mouseDoubleClick( const juce::MouseEvent& event ) override;
@@ -37,6 +38,11 @@ namespace kick_ui
     private:
         void drawInfoBar( int noteNum, int startTime, juce::MouseEvent event );
         void validateSeqTrack();
+        void selectInRectangle( const juce::MouseEvent& event );
+
+        // SHIFT shortcuts: a tap on a note deletes it, a drag from an empty spot selects a rectangle.
+        bool                   shiftAtDown{ false };
+        juce::Rectangle<float> selectRect;
 
         bool        isLeftEdge{ false };
         juce::Label resizeLabel;
