@@ -942,7 +942,7 @@ namespace kick_ui
             auto lowerNibble  = f_HwMsg.data[2];
             auto higherNibble = f_HwMsg.data[3];
 
-            // In the grid the dial edits the selected step's value; with nothing selected it nudges.
+            // In the grid the dial changes the selected notes' values; with nothing selected it nudges.
             if( knob == contracts::DeviceControlContracts::KnobSequence::EN_KNOB_CENTER && drumGrid.isVisible() )
             {
                 if( !drumGrid.adjustSelected( value ) && value != 0 )

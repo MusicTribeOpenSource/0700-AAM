@@ -49,7 +49,7 @@ namespace kick_ui
             return;
         layer = L;
         if( layer == Layer::Notes )
-            selRow = selColumn = -1;
+            clearSelection();
         if( onLayerChanged )
             onLayerChanged( layer );
         repaint();
@@ -87,6 +87,14 @@ namespace kick_ui
 
     void DrumGrid::readNotes()
     {
+        // The selection is per visible page; a different bank, bar, page or grid drops it.
+        const std::array<int, 5> view{ bankBase(), control.getBar(), firstStep(), data.numStepsPerPage, data.ticksPerQl };
+        if( view != selectionView )
+        {
+            selectionView = view;
+            clearSelection();
+        }
+
         for( auto& row : cells )
             for( auto& c : row )
                 c = Cell{};
@@ -188,6 +196,21 @@ namespace kick_ui
         return juce::isPositiveAndBelow( row, numRows ) ? row : -1;
     }
 
+    int DrumGrid::clampedColumnAt( int X ) const
+    {
+        const auto cols = numColumns();
+        if( cols <= 0 || gridArea.getWidth() <= 0 )
+            return -1;
+        return juce::jlimit( 0, cols - 1, (int)std::floor( ( X - gridArea.getX() ) * cols / (float)gridArea.getWidth() ) );
+    }
+
+    int DrumGrid::clampedRowAt( int Y ) const
+    {
+        if( gridArea.getHeight() <= 0 )
+            return -1;
+        return juce::jlimit( 0, numRows - 1, (int)std::floor( ( Y - gridArea.getY() ) * numRows / (float)gridArea.getHeight() ) );
+    }
+
     int DrumGrid::valueOf( const Cell& C ) const
     {
         switch( layer )
@@ -249,10 +272,44 @@ namespace kick_ui
         ae.addOrModifyNote( bankBase() + Row, c.start, c.length, c.velocity, c.probability, c.ratchet );
     }
 
+    bool DrumGrid::isSelected( int Row, int Column ) const
+    {
+        return layer != Layer::Notes && juce::isPositiveAndBelow( Row, numRows ) && juce::isPositiveAndBelow( Column, numColumns() )
+               && selected[(size_t)Row][(size_t)Column] && cells[(size_t)Row][(size_t)Column].on;
+    }
+
     bool DrumGrid::hasSelection() const
     {
-        return layer != Layer::Notes && juce::isPositiveAndBelow( selRow, numRows ) && juce::isPositiveAndBelow( selColumn, numColumns() )
-               && cells[(size_t)selRow][(size_t)selColumn].on;
+        for( int row = 0; row < numRows; ++row )
+            for( int col = 0; col < numColumns(); ++col )
+                if( isSelected( row, col ) )
+                    return true;
+        return false;
+    }
+
+    void DrumGrid::clearSelection()
+    {
+        for( auto& row : selected )
+            row.fill( false );
+    }
+
+    void DrumGrid::selectOnly( int Row, int Column )
+    {
+        clearSelection();
+        selected[(size_t)Row][(size_t)Column] = true;
+    }
+
+    void DrumGrid::selectRectangle( juce::Point<int> To )
+    {
+        selected = selectionAtDown; // Shift + drag adds the rectangle to the existing selection
+        const auto r0 = clampedRowAt( juce::jmin( downPos.y, To.y ) ), r1 = clampedRowAt( juce::jmax( downPos.y, To.y ) );
+        const auto c0 = clampedColumnAt( juce::jmin( downPos.x, To.x ) ), c1 = clampedColumnAt( juce::jmax( downPos.x, To.x ) );
+        if( r0 < 0 || c0 < 0 )
+            return;
+        for( int row = r0; row <= r1; ++row )
+            for( int col = c0; col <= c1; ++col )
+                if( cells[(size_t)row][(size_t)col].on )
+                    selected[(size_t)row][(size_t)col] = true;
     }
 
     bool DrumGrid::adjustSelected( int Delta )
@@ -260,15 +317,24 @@ namespace kick_ui
         if( !isVisible() || Delta == 0 || !hasSelection() )
             return false;
 
-        auto& c = cells[(size_t)selRow][(size_t)selColumn];
-        switch( layer )
+        // Relative change: the differences between the selected notes stay, each one stops at its limit.
+        for( int row = 0; row < numRows; ++row )
         {
-            case Layer::Velocity: c.velocity = juce::jlimit( 1, 127, c.velocity + Delta ); break;
-            case Layer::Probability: c.probability = juce::jlimit( 0, 100, c.probability + Delta ); break;
-            case Layer::Ratchet: c.ratchet = juce::jlimit( 1, 8, c.ratchet + Delta ); break;
-            default: return false;
+            for( int col = 0; col < numColumns(); ++col )
+            {
+                if( !isSelected( row, col ) )
+                    continue;
+                auto& c = cells[(size_t)row][(size_t)col];
+                switch( layer )
+                {
+                    case Layer::Velocity: c.velocity = juce::jlimit( 1, 127, c.velocity + Delta ); break;
+                    case Layer::Probability: c.probability = juce::jlimit( 0, 100, c.probability + Delta ); break;
+                    case Layer::Ratchet: c.ratchet = juce::jlimit( 1, 8, c.ratchet + Delta ); break;
+                    default: return false;
+                }
+                writeCell( row, col );
+            }
         }
-        writeCell( selRow, selColumn );
         repaint();
         return true;
     }
@@ -292,6 +358,10 @@ namespace kick_ui
 
     void DrumGrid::mouseDown( const juce::MouseEvent& e )
     {
+        // The centre dial goes to whichever control holds the keyboard focus (e.g. the view
+        // button or a top list box). Release it so the dial reaches the grid again.
+        ui::clearFocusComponent();
+
         const auto p = e.getPosition();
 
         if( tabArea.contains( p ) )
@@ -319,20 +389,26 @@ namespace kick_ui
         lastColumn = col;
         downPos    = p;
         dragging   = false;
+        rubberBand = {};
         if( layer == Layer::Notes )
         {
             paintMode = cells[(size_t)row][(size_t)col].on ? Paint::Clear : Paint::Set;
             applyAt( row, col, p.y );
         }
+        else if( contracts::DclContractsHelper::isShiftPressed() )
+        {
+            // Shift: tap toggles a note's selection, dragging adds a rectangle (decided on mouseUp/drag).
+            paintMode       = Paint::Select;
+            selectionAtDown = selected;
+        }
         else
         {
-            // A tap on a note only selects it so the dial can fine-tune it; a tap on an empty
-            // step creates the note at the tapped height. A swipe draws values.
+            // A tap on a note selects only that note so the dial can fine-tune it; a tap on an
+            // empty step creates the note at the tapped height. A swipe draws values.
             paintMode = Paint::Value;
             if( !cells[(size_t)row][(size_t)col].on )
                 applyAt( row, col, p.y );
-            selRow    = row;
-            selColumn = col;
+            selectOnly( row, col );
         }
         repaint();
     }
@@ -349,6 +425,16 @@ namespace kick_ui
                 return;
             dragging = true;
         }
+        if( paintMode == Paint::Select )
+        {
+            if( !dragging && p.getDistanceFrom( downPos ) < DrumGridConstants::dragThreshold )
+                return;
+            dragging   = true;
+            rubberBand = juce::Rectangle<int>( downPos, p ).getIntersection( gridArea );
+            selectRectangle( p );
+            repaint();
+            return;
+        }
 
         const auto col = columnAt( p.x );
         if( col < 0 )
@@ -362,15 +448,23 @@ namespace kick_ui
 
         lastColumn = col;
         if( paintMode == Paint::Value )
-        {
-            selRow    = dragRow;
-            selColumn = col;
-        }
+            selectOnly( dragRow, col );
         repaint();
     }
 
     void DrumGrid::mouseUp( const juce::MouseEvent& )
     {
+        if( paintMode == Paint::Select && !dragging )
+        {
+            // Shift + tap: toggle a note's selection; on an empty step it clears the selection.
+            const auto row = rowAt( downPos.y ), col = columnAt( downPos.x );
+            if( row >= 0 && col >= 0 && cells[(size_t)row][(size_t)col].on )
+                selected[(size_t)row][(size_t)col] = !selected[(size_t)row][(size_t)col];
+            else
+                clearSelection();
+        }
+
+        rubberBand = {};
         paintMode  = Paint::None;
         dragRow    = -1;
         lastColumn = -1;
@@ -528,10 +622,17 @@ namespace kick_ui
             g.setColour( accent.withAlpha( .7f ) );
             g.drawRoundedRectangle( r, 4.0f, 1.5f );
         }
-        if( hasSelection() )
+        g.setColour( juce::Colours::white );
+        for( int row = 0; row < numRows; ++row )
+            for( int col = 0; col < cols; ++col )
+                if( isSelected( row, col ) )
+                    g.drawRoundedRectangle( cellBounds( row, col ).toFloat().expanded( 1.0f ), 4.0f, 2.5f );
+        if( !rubberBand.isEmpty() )
         {
-            g.setColour( juce::Colours::white );
-            g.drawRoundedRectangle( cellBounds( selRow, selColumn ).toFloat().expanded( 1.0f ), 4.0f, 2.5f );
+            g.setColour( juce::Colours::white.withAlpha( .12f ) );
+            g.fillRect( rubberBand );
+            g.setColour( juce::Colours::white.withAlpha( .8f ) );
+            g.drawRect( rubberBand, 1 );
         }
         if( juce::isPositiveAndBelow( playColumn, cols ) )
         {

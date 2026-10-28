@@ -24,8 +24,10 @@
 namespace kick_ui
 {
     // Drum grid: all 16 pads of a bank as rows, the steps of the current page as columns.
-    // No tool modes: in the NOTES layer a tap sets or clears a step and a swipe paints the row;
-    // in the value layers every cell is a small fader and a swipe draws a curve along the row.
+    // NOTES layer: a tap sets or clears a step and a swipe paints the row.
+    // Value layers: every cell is a small fader, a swipe draws values along the row and a tap
+    // selects the note. With SHIFT, taps toggle notes into the selection and dragging adds a
+    // rectangle. The dial and +/- change all selected notes relatively.
     class DrumGrid : public juce::Component
         , private juce::Timer
     {
@@ -45,7 +47,7 @@ namespace kick_ui
         void  setLayer( Layer L );
         Layer getLayer() const { return layer; }
 
-        // Dial / +- on the selected cell in a value layer. Returns false if nothing is selected.
+        // Dial / +- on the selected notes in a value layer. Returns false if nothing is selected.
         bool adjustSelected( int Delta );
 
         std::function<void( Layer )> onLayerChanged;
@@ -68,7 +70,8 @@ namespace kick_ui
             None,
             Set,
             Clear,
-            Value
+            Value,
+            Select
         };
 
         void paint( juce::Graphics& g ) override;
@@ -89,6 +92,8 @@ namespace kick_ui
         juce::Rectangle<int> cellBounds( int Row, int Column ) const;
         int                  columnAt( int X ) const;
         int                  rowAt( int Y ) const;
+        int                  clampedColumnAt( int X ) const;
+        int                  clampedRowAt( int Y ) const;
 
         void applyAt( int Row, int Column, int Y );
         void setStep( int Row, int Column, bool On );
@@ -97,7 +102,11 @@ namespace kick_ui
         int   valueOf( const Cell& C ) const;
         float normalizedOf( const Cell& C ) const;
         void  writeCell( int Row, int Column );
+        bool  isSelected( int Row, int Column ) const;
         bool  hasSelection() const;
+        void  clearSelection();
+        void  selectOnly( int Row, int Column );
+        void  selectRectangle( juce::Point<int> To );
 
     private:
         mt::MTAudioInterface& ae{ mt::getAudioInterface() };
@@ -110,6 +119,8 @@ namespace kick_ui
         Layer layer{ Layer::Notes };
 
         std::array<std::array<Cell, 16>, numRows> cells{};
+        std::array<std::array<bool, 16>, numRows> selected{}, selectionAtDown{};
+        std::array<int, 5>                        selectionView{}; // bank/bar/page/grid the selection belongs to
         std::array<juce::String, numRows>         padNames{};
         std::vector<mt::MTNote>                   notes;
         std::vector<mt::MTISample*>               samples;
@@ -121,10 +132,9 @@ namespace kick_ui
         int   lastColumn{ -1 };
         int   playColumn{ -1 };
         int   pollCounter{ 0 };
-        int   selRow{ -1 };
-        int   selColumn{ -1 };
         bool  dragging{ false };
-        juce::Point<int> downPos;
+        juce::Point<int>     downPos;
+        juce::Rectangle<int> rubberBand;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR( DrumGrid )
     };
