@@ -8,7 +8,7 @@
 	#sudo apt install gcc g++ bash patch gzip bzip2 perl tar cpio unzip \
 rsync file bc libasound2-dev libjack-jackd2-dev libcurl4-openssl-dev libfreetype6-dev \
 libx11-dev libxcomposite-dev libxcursor-dev libxcursor-dev libxext-dev libxinerama-dev \
-libxrandr-dev libxrender-dev libwebkit2gtk-4.0-dev libglu1-mesa-dev mesa-common-dev libserial*
+libxrandr-dev libxrender-dev libxi-dev libwebkit2gtk-4.0-dev libglu1-mesa-dev mesa-common-dev libserial*
 
 
 3. Clone the Kick Repo and inside repo create build folder.
