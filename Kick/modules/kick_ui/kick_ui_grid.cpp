@@ -28,5 +28,6 @@
 
 // Step sequencer grid
 #include "audio_components/step_sequencer/kick_StepPresets.cpp"
+#include "audio_components/step_sequencer/kick_DrumGrid.cpp"
 #include "audio_components/step_sequencer/kick_stepSequencer.cpp"
 #include "audio_components/step_sequencer/kick_StepSequencerControl.cpp"

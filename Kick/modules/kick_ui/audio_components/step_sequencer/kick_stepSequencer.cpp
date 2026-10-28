@@ -549,6 +549,8 @@ namespace kick_ui
             ae.addOrModifyNote( pad, m.start, m.length, m.velocity, m.probability, m.ratchet );
 
         triggerAsyncUpdate();
+        if( onNudged )
+            onNudged();
     }
 
     void StepComponent::handleMouse( const juce::MouseEvent& event )
@@ -599,7 +601,7 @@ namespace kick_ui
         header.onBackButtonPressed = [this]( bool ) { closeScreen( Screen::HomeListView ); };
 
         // Setup step sequencer...
-        mt::utils::addAndMakeVisible( this, stepControl, stepPreset, stepViewport, header, topControl, tracks, totalBars, trackLength, bpmTempo, warningLabel );
+        mt::utils::addAndMakeVisible( this, stepControl, stepPreset, stepViewport, header, topControl, tracks, totalBars, trackLength, bpmTempo, warningLabel, drumGrid, viewModeButton );
         mt::utils::setTitleProportion( .4f, totalBars, bpmTempo );
         mt::utils::setTitleColour( ui::Theme::textColour( 1 ), totalBars, bpmTempo );
         mt::utils::setTitleFontHeight( 16, totalBars, bpmTempo, tracks );
@@ -744,6 +746,7 @@ namespace kick_ui
         gridData.onNoteSelectionChanged.connect( [this]( int SelectedNote ) {
             topControl.padValueListBox.setSelected( SelectedNote, juce::dontSendNotification );
             stepComponent.refresh();
+            drumGrid.refresh();
         } );
 
         topControl.padValueListBox.onSelectionChanged = [&]( int Index, const juce::String& ) {
@@ -759,7 +762,34 @@ namespace kick_ui
 
         topControl.paramValueListBox.onSelectionChanged = [&]( int Index, const juce::String& Param ) {
             stepComponent.refresh();
+            if( drumGrid.getLayer() != DrumGrid::Layer::Notes )
+                drumGrid.setLayer( (DrumGrid::Layer)( Index + 1 ) );
         };
+
+        // Drum grid: keep it in sync with the shared top controls (pad, bar, page, parameter).
+        for( auto* cb : { &topControl.pageChanged, &topControl.barChanged, &topControl.padChanged } )
+        {
+            auto previous = *cb;
+            *cb           = [this, previous]() {
+                if( previous )
+                    previous();
+                drumGrid.refresh();
+            };
+        }
+
+        drumGrid.onLayerChanged = [this]( DrumGrid::Layer L ) {
+            if( L != DrumGrid::Layer::Notes && topControl.paramValueListBox.getSelectedIndex() != (int)L - 1 )
+            {
+                topControl.paramValueListBox.setSelected( (int)L - 1, juce::dontSendNotification );
+                stepComponent.refresh();
+            }
+        };
+
+        stepComponent.onNudged = [this]() { drumGrid.refresh(); };
+
+        viewModeButton.setToggleState( false, juce::dontSendNotification ); // CLASSIC by default
+        viewModeButton.setToggleButtonText( "GRID", "CLASSIC" );
+        viewModeButton.onClick = [this]() { applyViewMode(); };
 
         tracks.onSelectionChanged = [&]( int Sel, const juce::String& ) {
             ae.setSelectedTrack( Sel );
@@ -783,6 +813,8 @@ namespace kick_ui
         topControl.setBoundsRelative( .0100f, .1610f, .9814f, .0823f );
         stepViewport.setBoundsRelative( .010f, .2621f, .8775f, .6404f );
         stepPreset.setBoundsRelative( .8943f, .2621f, .0978f, .6404f );
+        drumGrid.setBoundsRelative( .010f, .2621f, .9814f, .6404f );
+        viewModeButton.setBoundsRelative( .8450f, .0299f, .1050f, .0823f ); // ends before the header's resources button at .96
         warningLabel.setBounds( getLocalBounds().removeFromTop( 300 ).withTrimmedTop( 200 ).removeFromLeft( 900 ).withTrimmedLeft( 300 ) );
 
         stepComponent.setMinimumSize( stepViewport.getWidth(), stepViewport.getHeight() );
@@ -910,6 +942,14 @@ namespace kick_ui
             auto lowerNibble  = f_HwMsg.data[2];
             auto higherNibble = f_HwMsg.data[3];
 
+            // In the grid the dial edits the selected step's value; with nothing selected it nudges.
+            if( knob == contracts::DeviceControlContracts::KnobSequence::EN_KNOB_CENTER && drumGrid.isVisible() )
+            {
+                if( !drumGrid.adjustSelected( value ) && value != 0 )
+                    stepComponent.nudge( value > 0 );
+                return;
+            }
+
             if( knob != contracts::DeviceControlContracts::KnobSequence::EN_KNOB_CENTER )
                 stepComponent.knobRotated( knob - 1, value );
             else
@@ -937,11 +977,13 @@ namespace kick_ui
             {
                 case contracts::DeviceControlContracts::BtnLedSequence::EN_PLUS:
                 case contracts::DeviceControlContracts::BtnLedSequence::EN_KNOB_CW:
-                    stepComponent.nudge( TRUE );
+                    if( !drumGrid.adjustSelected( 1 ) )
+                        stepComponent.nudge( TRUE );
                     break;
                 case contracts::DeviceControlContracts::BtnLedSequence::EN_KNOB_CCW:
                 case contracts::DeviceControlContracts::BtnLedSequence::EN_MINUS:
-                    stepComponent.nudge( FALSE );
+                    if( !drumGrid.adjustSelected( -1 ) )
+                        stepComponent.nudge( FALSE );
                     break;
             }
         }
@@ -978,6 +1020,7 @@ namespace kick_ui
                 isPadSelect = false;
                 topControl.setPageEnable( true );
                 warningLabel.setVisible( false );
+                applyViewMode();
             }
         }
         else
@@ -997,6 +1040,15 @@ namespace kick_ui
         totalBars.setValue( length, juce::dontSendNotification );
         topControl.setTotalBars( length );
         stepComponent.refresh();
+        drumGrid.refresh();
+    }
+
+    void StepSequencer::applyViewMode()
+    {
+        const auto grid = viewModeButton.getToggleState();
+        drumGrid.setVisible( grid );
+        stepViewport.setVisible( !grid );
+        stepPreset.setVisible( !grid );
     }
 
     void StepSequencer::clearPadData()
@@ -1006,6 +1058,7 @@ namespace kick_ui
         range.endTime                   = topControl.barValueListBox.getNumOptions() * gridData.getTicksUptoBar( topControl.barValueListBox.getNumOptions() );
         ae.deleteNotesInRange( aeSel, range );
         stepComponent.refresh();
+        drumGrid.refresh();
     }
 
     void StepSequencer::clearBarData()
@@ -1015,6 +1068,7 @@ namespace kick_ui
         range.endTime                   = ( topControl.barValueListBox.getSelectedIndex() + 1 ) * gridData.getTicksPerBar( topControl.barValueListBox.getSelectedIndex() + 1 );
         ae.deleteNotesInRange( aeSel, range );
         stepComponent.refresh();
+        drumGrid.refresh();
     }
 
     void StepSequencer::setTempo()
