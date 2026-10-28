@@ -399,6 +399,9 @@ namespace kick_ui
     void SamplerRecorder::setThumbnail()
     {
         auto& source = ae.getRecorderAudioBuffer();
+        // The hash never changes, so without this the cache keeps serving the first
+        // (still silent) thumbnail taken right after REC and the waveform stays flat.
+        thumbnailCache.removeThumb( 6783672364 );
         thumbnail.setSource( &source, source.getNumSamples(), 6783672364 );
         triggerAsyncUpdate();
     }
