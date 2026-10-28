@@ -492,6 +492,23 @@ namespace kick_ui
             r.startTime += ( Index * data.ticksPerQl );
             r.endTime = ( r.startTime + data.ticksPerQl );
 
+            // Moving a slider on an empty step sets the note right away, no separate step button press needed.
+            if( !data.selected[(size_t)Index] )
+            {
+                auto velocity = MIDI::MAX, probability = 100, ratchet = 1;
+                if( control.paramValueListBox.getSelected() == "Velocity" )
+                    velocity = juce::jlimit( 1, MIDI::MAX, Value );
+                else if( control.paramValueListBox.getSelected() == "Probability" )
+                    probability = juce::jlimit( 0, 100, Value );
+                else if( control.paramValueListBox.getSelected() == "Ratchet" )
+                    ratchet = juce::jlimit( 1, 8, Value );
+
+                ae.addOrModifyNote( range.noteStart, r.startTime, data.ticksPerQl, velocity, probability, ratchet );
+                data.selected[(size_t)Index] = true;
+                triggerAsyncUpdate();
+                return;
+            }
+
             if( control.paramValueListBox.getSelected() == "Velocity" )
                 ae.editNoteVelocity( aeSel, r, Value );
             else if( control.paramValueListBox.getSelected() == "Probability" )
