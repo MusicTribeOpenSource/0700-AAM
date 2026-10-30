@@ -28,7 +28,7 @@ namespace contracts
     // return global instance.
     keyPressedDetector& getKeypressDetector() { return _keysDetector; }
 
-#if defined( _WIN32 ) || defined( _WIN64 )
+#if defined( KICK_KEYBOARD_PANEL )
 
     static const std::map<int, keyPressedDetector::cmdInfo> _keyMap = {
         { juce::KeyPress::upKey, { contracts::DeviceControlContracts::EN_KNOB_CENTER, false, CPktMgr::EN_PKT_TYPE_KNOBS, contracts::DeviceControlContracts::EN_KNOB_ROTARY } },
@@ -188,5 +188,5 @@ namespace contracts
             detectForKeyCode( keyCode, info );
         return true;
     }
-#endif // defined( _WIN32 ) || defined( _WIN64 )
+#endif // defined( KICK_KEYBOARD_PANEL )
 } // namespace

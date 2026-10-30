@@ -27,11 +27,17 @@
 
 
 
+// The keyboard front panel (PC keys press the pads and buttons) is always built on Windows. On other platforms it is
+// opt-in with cmake -DKICK_DESKTOP_KEYBOARD=ON, so a keyboard plugged into the device itself cannot press its buttons.
+#if defined( _WIN32 ) || defined( _WIN64 ) || defined( KICK_DESKTOP_KEYBOARD )
+    #define KICK_KEYBOARD_PANEL 1
+#endif
+
 namespace contracts
 {
     
 
-#if defined( _WIN32 ) || defined( _WIN64 )
+#if defined( KICK_KEYBOARD_PANEL )
     struct keyPressedDetector : public juce::KeyListener
     {
         juce::Array<int> _keys;
@@ -52,12 +58,12 @@ namespace contracts
         std::atomic<bool> shiftBtnState;
 
     };
-#else // implement  this class for other non windows platforms.
+#else // keyboard front panel not enabled in this build.
     struct keyPressedDetector : public juce::KeyListener
     {
         bool keyPressed( const juce::KeyPress& key, juce::Component* originatingComponent ) override { return false;}
         bool keyStateChanged( bool isKeyDown, juce::Component* originatingComponent ) override { return false; };
     };
-#endif // defined( _WIN32 ) || defined( _WIN64 )
+#endif // defined( KICK_KEYBOARD_PANEL )
     keyPressedDetector& getKeypressDetector();
 }
