@@ -38,6 +38,7 @@ namespace kick_ui
         inline void updateStepValue( int Index, float Normalized );
 
         void nudge( bool direction );
+        std::function<void()> onNudged;
         void knobRotated( int knob, int Velocity );
         void setPadSelect( bool State ) { isPadSelected = State; }
         void setPage( int index ) { control.setSelectedPage( index ); }
@@ -139,6 +140,7 @@ namespace kick_ui
         void handleAsyncUpdate() override;
 
         void refresh();
+        void applyViewMode();
 
         void clearPadData();
         void clearBarData();
@@ -167,6 +169,8 @@ namespace kick_ui
         StepSequencerTopControl topControl;
         StepPresets             stepPreset{ data };
         StepComponent           stepComponent{ data, topControl, stepPreset };
+        DrumGrid                drumGrid{ data, topControl };
+        ui::KickToggleButton    viewModeButton{ "View", "GRID", "CLASSIC" };
         static int              lastPressedPad;
 
         KickModeHeader header{ "Step Sequencer", "Icon_Stepsequencer" };

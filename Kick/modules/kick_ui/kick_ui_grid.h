@@ -73,6 +73,7 @@
     #include "audio_components/step_sequencer/kick_StepSequencerDataType.h"
     #include "audio_components/step_sequencer/kick_StepSequencerControl.h"
     #include "audio_components/step_sequencer/kick_StepPresets.h"
+    #include "audio_components/step_sequencer/kick_DrumGrid.h"
     #include "audio_components/step_sequencer/kick_StepSequencer.h"
 
 #endif // KICK_UI_GRID_H_INCLUDE
