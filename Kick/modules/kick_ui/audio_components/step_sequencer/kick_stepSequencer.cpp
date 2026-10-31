@@ -450,7 +450,8 @@ namespace kick_ui
             }
             else
             {
-                ae.deleteNoteInTimeRange( aeSel, st, et );
+                // deleteNoteInTimeRange() would erase every pad's note at this step; erase only this pad's.
+                ae.deleteNotesInRange( aeSel, mt::NotesInRange( range.noteStart, range.noteEnd, st, et ) );
             }
             triggerAsyncUpdate();
         }
