@@ -90,7 +90,8 @@ namespace mt
     {
         AudIO::Object::prepareToPlay( samplerate, blocksize );
         player.setSampleRate( samplerate );
-        gain.reset( (double)samplerate, 1.0 );
+        // previewOn() fades in from 0: keep it a short de-click ramp, a long one swallows the attack.
+        gain.reset( (double)samplerate, 0.01 );
         pan.reset( (double)samplerate, 0.01 );
     }
 
