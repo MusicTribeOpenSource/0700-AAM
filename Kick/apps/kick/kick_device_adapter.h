@@ -36,6 +36,9 @@ public:
     {
         Controls::InputEvents::initialize();
         auto handler = [&]( CPktMgr::HWMsg_t& f_HwMsg ) {
+            // Keep DclContractsHelper::isShiftPressed() in sync with the SHIFT button.
+            if( contracts::DclContractsHelper::isButtonMessage( f_HwMsg ) && contracts::DclContractsHelper::getButtonCode( f_HwMsg ) == contracts::DeviceControlContracts::EN_SHIFT )
+                contracts::shiftBtnState = contracts::DclContractsHelper::getButtonState( f_HwMsg ) == contracts::DeviceControlContracts::BTN_PRESSED;
             contracts::DclSignals::hardwareInputTriggered( f_HwMsg );
         };
 
