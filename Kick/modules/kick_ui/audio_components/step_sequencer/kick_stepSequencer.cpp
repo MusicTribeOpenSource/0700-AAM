@@ -516,11 +516,39 @@ namespace kick_ui
 
     void StepComponent::nudge( bool direction )
     {
-        if( ae.getNoteList().getNumChildren() > 0 )
+        // nudgeNotes() erases notes pushed before tick 0 and lets notes run past the sequence end,
+        // so nudge here and wrap the pad's notes around inside the sequence instead.
+        const auto total = (int)gridData.getTicksUptoBar( (unsigned int)juce::jmax( 1, ae.getSequenceLength( aeSel.sequence ) ) );
+        if( total <= 0 || data.ticksPerQl <= 0 )
+            return;
+
+        const auto              pad = range.noteStart;
+        mt::NotesInRange        all( pad, pad );
+        std::vector<mt::MTNote> found;
+        if( ae.getNotesInRange( aeSel, found, all ) < 0 || found.empty() )
+            return;
+
+        struct Moved
         {
-            ae.nudgeNotes( aeSel, range.noteStart, ( direction ? data.ticksPerQl : -data.ticksPerQl ) );
-            triggerAsyncUpdate();
+            int start, length, velocity, probability, ratchet;
+        };
+        std::vector<Moved> moved;
+        moved.reserve( found.size() );
+        const auto delta = direction ? data.ticksPerQl : -data.ticksPerQl;
+        for( auto& n : found )
+        {
+            auto start = ( n.start.get() + delta ) % total;
+            if( start < 0 )
+                start += total;
+            moved.push_back( { start, n.length.get(), (int)n.velocity.get(), (int)n.probability.get(), (int)n.ratchet.get() } );
         }
+
+        // Remove first, then re-add, so notes never collide with each other while moving.
+        ae.deleteNotesInRange( aeSel, all );
+        for( auto& m : moved )
+            ae.addOrModifyNote( pad, m.start, m.length, m.velocity, m.probability, m.ratchet );
+
+        triggerAsyncUpdate();
     }
 
     void StepComponent::handleMouse( const juce::MouseEvent& event )
