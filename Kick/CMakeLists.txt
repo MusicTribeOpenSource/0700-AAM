@@ -28,6 +28,7 @@ option( DEBUG_TOUCH "Enable mouse cursor" OFF )
 option( USE_ASAN_KICK "enable address sanitizer" OFF )
 option( PERFETTO "Enable tracing using Perfetto" OFF )
 option( KICK_DESKTOP_KEYBOARD "Map the PC keyboard to the front panel buttons and pads (always on for Windows)" OFF )
+option( KICK_KEYBOARD_QWERTZ "Use QWERTZ layout for PC keyboard mapping (swaps Y and Z for physical pad layout)" OFF )
 
 #Compile commands, useful for some IDEs like VS-Code
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
@@ -46,6 +47,10 @@ endif()
 
 if(KICK_DESKTOP_KEYBOARD)
     add_definitions(-DKICK_DESKTOP_KEYBOARD=1)
+endif()
+
+if(KICK_KEYBOARD_QWERTZ)
+    add_definitions(-DKICK_KEYBOARD_QWERTZ=1)
 endif()
 
 if(USE_ASAN_KICK)
