@@ -212,9 +212,16 @@ namespace mt
     MTIProgram* MTAudioProgramManager::getProgramById( const juce::String& ID )
     {
         if( ID.isNotEmpty() )
+        {
             for( auto& it : programs )
                 if( ID == it->getID() )
                     return it.get();
+
+            // Fallback: match by program name if ID didn't match directly
+            for( auto& it : programs )
+                if( ID == it->getName() )
+                    return it.get();
+        }
         return nullptr;
     }
 
