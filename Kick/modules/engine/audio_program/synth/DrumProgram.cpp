@@ -124,6 +124,7 @@ namespace mt
                     // Start playback.
                     if( auto voice = dynamic_cast<DrumVoice*>( getFreeVoice( Note, notePoly ) ) )
                     {
+                        voice->setPadGains( pNote->gL.load(), pNote->gR.load() );
                         voice->setSlice( soundSlice );
                         voice->noteOn( Note, Velocity );
                         addVoiceForPlayback( voice );
@@ -138,5 +139,16 @@ namespace mt
                     noteOn( it, Velocity );
             }
         }
+    }
+
+    void DrumProgram::noteOff( int Note )
+    {
+        if( !pDrum || !CommonUtils::isValidMidiNote( Note ) ) return;
+        if( auto pNote = pDrum->getDrumClip( Note ) )
+        {
+            if( pNote->samplePlay.get() == SamplePlayType::ONE_SHOT )
+                return;
+        }
+        ISynthObject::noteOff( Note );
     }
 };

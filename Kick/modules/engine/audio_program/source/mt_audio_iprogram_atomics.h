@@ -110,7 +110,7 @@ namespace mt
             a.attachTo( Tree, IDs::attack, Undo, 0.f );
             h.attachTo( Tree, IDs::hold, Undo, 0.f );
             d.attachTo( Tree, IDs::decay, Undo, 0.f );
-            s.attachTo( Tree, IDs::sustain, Undo, 1.f );
+            s.attachTo( Tree, IDs::sustain, Undo, 127.f );
             r.attachTo( Tree, IDs::release, Undo, 0.f );
         }
 

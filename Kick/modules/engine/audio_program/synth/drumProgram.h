@@ -33,6 +33,8 @@ namespace mt
 
         void setProgram( MTIProgram* PDrum ) override;
         void noteOn( int Note, int Velocity ) override;
+        using ISynthObject::noteOff;
+        void noteOff( int Note ) override;
 
     private:
         MTDrumProgram*                            pDrum{ nullptr };
