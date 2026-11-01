@@ -390,9 +390,9 @@ namespace ui
                     comp = new FileLeftEntry( Row );
                     comp->setInterceptsMouseClicks( false, true );
                 }
-                if( row[Row] == "/mnt//sdcard" )
+                if( row[Row] == fileUtils::getSdCardMountedPath() )
                     sdCardRow = Row;
-                else if( row[Row] == "/mnt//flash" )
+                else if( row[Row] == fileUtils::getUsbMountedPath() )
                     USBRow = Row;
 
                 comp->ejectCallback = [&]( int rowId ) {

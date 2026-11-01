@@ -27,6 +27,16 @@ option( KICK_MULTITOUCH "KICK Multitouch demo App" OFF )
 option( DEBUG_TOUCH "Enable mouse cursor" OFF )
 option( USE_ASAN_KICK "enable address sanitizer" OFF )
 option( PERFETTO "Enable tracing using Perfetto" OFF )
+option( KICK_EMU "Build the Kick app for the desktop emulator (emu/)" OFF )
+
+if(KICK_EMU)
+    set(KICK_EMU_DIR ${CMAKE_SOURCE_DIR}/../emu CACHE PATH "Emulator support directory")
+    add_compile_definitions(KICK_EMU=1)
+    include_directories(${KICK_EMU_DIR}/modules/kick_emu)
+    # The emulator only needs the device binary. The timestamp helper forces a
+    # rebuild of everything on every build, so it stays off here.
+    set(TIMESTAMP OFF CACHE BOOL "" FORCE)
+endif()
 
 #Compile commands, useful for some IDEs like VS-Code
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
