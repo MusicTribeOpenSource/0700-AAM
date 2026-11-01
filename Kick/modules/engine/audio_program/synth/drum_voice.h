@@ -39,6 +39,7 @@ namespace mt
         void noteOff() final;
 
         inline bool isTailingOff() const { return !juce::approximatelyEqual( tailOff, 0.0 ); }
+        void setPadGains( float gl, float gr ) { padGainL.store( gl ); padGainR.store( gr ); }
 
     private:
         inline void update()
@@ -75,8 +76,11 @@ namespace mt
         ADSR   pitchEnv;
         double sampleLength{ 0 };
 
-        float lfoToAmp{ 1 };
-        float lfoToPitch{ 1 };
+        std::atomic<float> padGainL{ 1.0f };
+        std::atomic<float> padGainR{ 1.0f };
+
+        float lfoToAmp{ 0 };
+        float lfoToPitch{ 0 };
         float lfoToFilter{ 0 };
         float lfoToPan{ 0 };
 

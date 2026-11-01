@@ -180,7 +180,13 @@ namespace mt
 
                 auto aMod   = rGain * ampAdsr * ( ( 1. - lfoToAmp ) + ( lfoToAmp * lfoOut ) ); // Amplitude modulation factor.
                 auto panMod = ( lfoToPan * lfoOut ) + ( gain.getTargetValue() * ampToPan ); // Pan modulation factor.
-                auto pMod   = pitchAdsr * masterPitchRatio * ( 1.0 - ( lfoToPitch * lfoOut ) ); // Pitch modulation factor.
+
+                double pitchEnvFactor = 1.0;
+                if( pEnv.pitch.isEnabled() && pEnv.pitch.depth() != 0 )
+                {
+                    pitchEnvFactor = std::pow( 2.0, ( ( pitchAdsr - 1.0 ) * pEnv.pitch.depth() ) / 12.0 );
+                }
+                auto pMod   = pitchEnvFactor * masterPitchRatio * ( 1.0 - ( lfoToPitch * lfoOut ) ); // Pitch modulation factor.
                 auto fMod   = filtAdsr * pEnv.filter.depth() * ( ( lfoToFilter * lfoOut ) + ( lfoToPitch * lfoOut ) ); // Filter cutoff frequency modulation.
 
                 // get next sample.
@@ -194,9 +200,11 @@ namespace mt
                 *out1++ = panner.getRight() * sample.getSample( 1, 0 );
             }
 
-            // Apply Master gain and pan, and add to the Buffer.
-            Buffer.addFrom( 0, 0, tempBuffer, 0, 0, numSamples, masterGainL );
-            Buffer.addFrom( 1, 0, tempBuffer, 1, 0, numSamples, masterGainR );
+            // Apply Master and Pad gain and pan, and add to the Buffer.
+            const auto totalGainL = masterGainL * padGainL.load();
+            const auto totalGainR = masterGainR * padGainR.load();
+            Buffer.addFrom( 0, 0, tempBuffer, 0, 0, numSamples, totalGainL );
+            Buffer.addFrom( 1, 0, tempBuffer, 1, 0, numSamples, totalGainR );
 
             if( hasFinished() )
                 makeFree();
