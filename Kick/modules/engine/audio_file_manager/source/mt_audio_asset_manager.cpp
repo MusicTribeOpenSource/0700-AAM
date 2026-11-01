@@ -170,16 +170,22 @@ namespace mt
             {
                 if( !f.isValid() )
                 {
+                    auto pathForTree = ( projDir != juce::File() && projDir.exists() && file.isAChildOf( projDir ) )
+                                           ? file.getRelativePathFrom( projDir )
+                                           : File;
+
                     // Create Node..
                     auto fileVT = createVTree( IDs::FILE,
                                                IDs::id, CommonUtils::createID(),
-                                               IDs::path, File );
+                                               IDs::path, pathForTree );
 
                     // Add this node to actual asset tree.
                     v.appendChild( fileVT, um );
 
                     // Add to asset manager.
                     addToAssetMgr( File, Type );
+                    if( pathForTree != File )
+                        addToAssetMgr( pathForTree, Type );
 
                     // Add to sample cache.
                     auto LengthInSeconds = ( AssetTypes::Samples == Type ) ? 5.0 : -1;

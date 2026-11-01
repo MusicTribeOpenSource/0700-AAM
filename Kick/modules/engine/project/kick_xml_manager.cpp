@@ -19,6 +19,61 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
+namespace
+{
+    bool isAudioFilePath( const juce::String& path )
+    {
+        if( path.isEmpty() ) return false;
+        return juce::File( path ).hasFileExtension( ".wav;bwf;aif;aiff;flac;ogg;mp3;wmv;asf;wm;wma" );
+    }
+
+    void relativizeSamplePaths( juce::ValueTree& tree, const juce::File& projectDir )
+    {
+        if( !projectDir.exists() || !tree.isValid() ) return;
+
+        static const juce::Identifier idPath( "path" );
+        static const juce::Identifier idSource( "source" );
+
+        auto processProperty = [&]( const juce::Identifier& prop )
+        {
+            if( !tree.hasProperty( prop ) ) return;
+            auto val = tree.getProperty( prop ).toString();
+            if( isAudioFilePath( val ) && juce::File::isAbsolutePath( val ) )
+            {
+                juce::File f( val );
+                if( f.isAChildOf( projectDir ) )
+                {
+                    tree.setProperty( prop, f.getRelativePathFrom( projectDir ), nullptr );
+                }
+                else if( f.existsAsFile() )
+                {
+                    auto samplesDir = projectDir.getChildFile( "samples" );
+                    if( !samplesDir.exists() && projectDir.getChildFile( "Imported" ).exists() )
+                        samplesDir = projectDir.getChildFile( "Imported" );
+                    samplesDir.createDirectory();
+
+                    auto dest = samplesDir.getChildFile( f.getFileName() );
+                    if( dest.existsAsFile() && dest.getFullPathName() != f.getFullPathName() )
+                    {
+                        dest = samplesDir.getChildFile( f.getParentDirectory().getFileName() + "_" + f.getFileName() );
+                    }
+                    if( !dest.existsAsFile() ) f.copyFileTo( dest );
+                    tree.setProperty( prop, dest.getRelativePathFrom( projectDir ), nullptr );
+                }
+            }
+        };
+
+        processProperty( idPath );
+        processProperty( idSource );
+
+        for( int i = 0; i < tree.getNumChildren(); ++i )
+        {
+            auto child = tree.getChild( i );
+            relativizeSamplePaths( child, projectDir );
+        }
+    }
+}
+
 namespace mt
 {
     KickXML::KickXML( juce::Identifier ID, const juce::String& FileExtension, const juce::String& Version )
@@ -90,6 +145,7 @@ namespace mt
         if( xmlFile.existsAsFile() )
         {
             juce::ScopedLock l( lock );
+            relativizeSamplePaths( vt, xmlFile.getParentDirectory() );
             // Save Program...
             auto xml  = vt.toXmlString();
             auto fxml = xmlFile.loadFileAsString();
