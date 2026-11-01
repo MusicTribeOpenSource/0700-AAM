@@ -71,6 +71,7 @@ namespace mt
         static std::vector<juce::String>                        midiOutPorts;
         static juce::ReferenceCountedArray<MidiDeviceListEntry> midiInputs;
         static juce::ReferenceCountedArray<MidiDeviceListEntry> midiOutputs;
+        std::vector<std::unique_ptr<juce::MidiOutput>>          virtualOutputs;
 
         juce::CriticalSection      midiMonitorLock;
         juce::Array<MTMidiMessage> incomingMessages;
