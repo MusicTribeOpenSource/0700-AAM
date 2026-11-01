@@ -305,8 +305,13 @@ namespace kick_emu
                     pending         = pending.substring( nl + 1 );
                     if( line.isNotEmpty() )
                     {
-                        const auto reply = handle( line ) + "\n";
-                        s.write( reply.toRawUTF8(), (int)reply.getNumBytesAsUTF8() );
+                        const auto reply = handle( line );
+                        const auto out   = reply + "\n";
+                        s.write( out.toRawUTF8(), (int)out.getNumBytesAsUTF8() );
+                        // A browser or other protocol hitting this port sends a non-command first line
+                        // (for example "POST / HTTP/1.1"). Drop the connection so nothing after it runs.
+                        if( reply.startsWith( "error unknown command" ) )
+                            return;
                     }
                 }
             }
@@ -350,8 +355,16 @@ namespace kick_emu
 
             if( cmd == "snapshot" && a.size() >= 2 )
             {
-                juce::File f( juce::File::isAbsolutePath( a[1] ) ? a[1] : juce::File::getCurrentWorkingDirectory().getChildFile( a[1] ).getFullPathName() );
-                auto       img = w->createComponentSnapshot( w->getLocalBounds(), true, 1.0f );
+                // Only .png files inside the device root or the system temp dir, so a stray local client
+                // cannot overwrite arbitrary user files.
+                const juce::File root( kick_emu::root() );
+                const juce::File tmp = juce::File::getSpecialLocation( juce::File::tempDirectory );
+                const juce::File f   = root.getChildFile( a[1] );
+                const bool       ok  = f.hasFileExtension( "png" ) && ( f.isAChildOf( root ) || f.isAChildOf( tmp ) );
+                if( !ok )
+                    return "error snapshot path must be a .png inside " + root.getFullPathName() + " or " + tmp.getFullPathName();
+                f.getParentDirectory().createDirectory();
+                auto img = w->createComponentSnapshot( w->getLocalBounds(), true, 1.0f );
                 f.deleteFile();
                 juce::FileOutputStream out( f );
                 juce::PNGImageFormat   png;

@@ -51,11 +51,13 @@ Kick listens on `127.0.0.1:50901` (`KICK_EMU_CONTROL_PORT`), one command per lin
 
 ```
 ping
-snapshot <file.png>
+snapshot <file.png>   (.png inside the device root or the system temp dir; relative paths resolve against the root)
 tap <x> <y> [holdMs]
 drag <x1> <y1> <x2> <y2> [holdMs]
 quit
 ```
+
+The socket is localhost only. A first line that is not a known command closes the connection, which stops browser cross-protocol requests from reaching later lines.
 
 Taps go straight to the component under the point. Injecting through the window peer fails on macOS unless the window is topmost.
 
