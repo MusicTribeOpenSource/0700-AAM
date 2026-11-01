@@ -326,14 +326,24 @@ namespace kick_emu
             if( args.isEmpty() )
                 return "error empty";
 
-            juce::String       result = "error timeout";
-            juce::WaitableEvent done;
-            juce::MessageManager::callAsync( [&] {
-                result = execute( args );
-                done.signal();
+            // The callback may still be queued when the wait times out, so its state is owned by a
+            // shared pointer instead of this stack frame. After a timeout the command can still run
+            // late; the reply to this client is "error timeout" either way.
+            struct Job
+            {
+                juce::StringArray   args;
+                juce::String        result{ "error timeout" };
+                juce::WaitableEvent done;
+            };
+            auto job  = std::make_shared<Job>();
+            job->args = args;
+            juce::MessageManager::callAsync( [job] {
+                job->result = execute( job->args );
+                job->done.signal();
             } );
-            done.wait( 5000 );
-            return result;
+            if( !job->done.wait( 5000 ) )
+                return "error timeout";
+            return job->result;
         }
 
         static juce::String execute( const juce::StringArray& a )

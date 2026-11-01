@@ -48,7 +48,8 @@ namespace mt
 
     void Recorder::beginRecording( bool FromBeginning, bool SkipThreshold )
     {
-        previewing = false;
+        previewing            = false;
+        lengthBeforeRecording = recordedSamples.load();
         if( FromBeginning || !overdub )
             head = 0;
         if( !overdub )
@@ -409,7 +410,9 @@ namespace mt
         // undo returns to the loop as it was before this pass.
         if( snapshotPending.exchange( false ) )
         {
-            const int len = recordedSamples.load();
+            // With overdub the take keeps its length. Without it beginRecording() already reset
+            // recordedSamples, so the previous take's length comes from lengthBeforeRecording.
+            const int len = overdub.load() ? recordedSamples.load() : lengthBeforeRecording.load();
             if( undoBuffer.getNumSamples() < len )
                 return; // Not preallocated; skip rather than allocate here.
             for( int c = 0; c < 2; ++c )

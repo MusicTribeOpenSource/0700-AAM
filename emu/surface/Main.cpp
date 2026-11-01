@@ -1131,14 +1131,23 @@ namespace
         ~ScriptRunner() override { stopThread( 2000 ); }
 
     private:
+        /// Runs fn on the message thread and waits. The callback owns its state through a shared
+        /// pointer, so a timeout cannot leave it touching destroyed locals. A timeout fails the script.
         void onMain( std::function<void()> fn )
         {
-            juce::WaitableEvent done;
-            juce::MessageManager::callAsync( [&] {
-                fn();
-                done.signal();
+            struct Job
+            {
+                std::function<void()> fn;
+                juce::WaitableEvent   done;
+            };
+            auto job = std::make_shared<Job>();
+            job->fn  = std::move( fn );
+            juce::MessageManager::callAsync( [job] {
+                job->fn();
+                job->done.signal();
             } );
-            done.wait( 10000 );
+            if( !job->done.wait( 10000 ) )
+                timedOut = true;
         }
 
         bool waitFor( std::function<bool()> cond, int timeoutMs )
@@ -1181,14 +1190,20 @@ namespace
                     finish( 1 );
                 };
 
+                if( timedOut.load() )
+                {
+                    fail( "message thread did not respond within 10 s" );
+                    return;
+                }
+
                 if( cmd == "wait" )
                     juce::Thread::sleep( t[1].getIntValue() );
                 else if( cmd == "pad" )
                 {
                     const int pad = t[1].getIntValue() - 1, vel = t.size() > 2 ? t[2].getIntValue() : 100, hold = t.size() > 3 ? t[3].getIntValue() : 80;
-                    onMain( [&] { surface.padDown( pad, vel ); } );
+                    onMain( [=] { surface.padDown( pad, vel ); } );
                     juce::Thread::sleep( hold );
-                    onMain( [&] { surface.padUp( pad ); } );
+                    onMain( [=] { surface.padUp( pad ); } );
                 }
                 else if( cmd == "button" )
                 {
@@ -1203,26 +1218,26 @@ namespace
                     }
                     if( id < 0 )
                         return fail( "unknown button" );
-                    onMain( [&] { surface.buttonDown( id ); } );
+                    onMain( [=] { surface.buttonDown( id ); } );
                     juce::Thread::sleep( hold );
-                    onMain( [&] { surface.buttonUp( id ); } );
+                    onMain( [=] { surface.buttonUp( id ); } );
                 }
                 else if( cmd == "knob" )
-                    onMain( [&] { surface.nudgeKnob( t[1].getIntValue(), t[2].getIntValue() ); } );
+                    onMain( [=] { surface.nudgeKnob( t[1].getIntValue(), t[2].getIntValue() ); } );
                 else if( cmd == "slider" )
                 {
-                    onMain( [&] { surface.setStrip( t[1].getIntValue() ); } );
+                    onMain( [=] { surface.setStrip( t[1].getIntValue() ); } );
                     juce::Thread::sleep( 60 );
-                    onMain( [&] { surface.releaseStrip(); } );
+                    onMain( [=] { surface.releaseStrip(); } );
                 }
                 else if( cmd == "sd" )
-                    onMain( [&] { surface.setSd( t[1] == "in" ); } );
+                    onMain( [=] { surface.setSd( t[1] == "in" ); } );
                 else if( cmd == "usb" )
-                    onMain( [&] { surface.setUsb( t[1] == "in" ); } );
+                    onMain( [=] { surface.setUsb( t[1] == "in" ); } );
                 else if( cmd == "snapshot" )
                 {
                     const auto file = juce::File::getCurrentWorkingDirectory().getChildFile( t[1] );
-                    onMain( [&] {
+                    onMain( [=] {
                         auto img = surface.createComponentSnapshot( surface.getLocalBounds() );
                         file.deleteFile();
                         juce::FileOutputStream out( file );
@@ -1291,6 +1306,7 @@ namespace
 
         Surface&          surface;
         juce::StringArray lines;
+        std::atomic<bool> timedOut{ false };
     };
 
     //==============================================================================

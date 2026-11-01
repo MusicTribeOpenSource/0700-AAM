@@ -128,6 +128,9 @@ namespace mt
         std::atomic<Direction> direction{ FORWARD };
         std::atomic<Mode>      mode{ LR_STEREO };
         std::atomic<int>       capacity{ 0 }, recordedSamples{ 0 };
+        /// Length of the take that beginRecording() is about to replace. Looper::recordingStarted()
+        /// snapshots this many samples, since recordedSamples is already reset by then.
+        std::atomic<int>       lengthBeforeRecording{ 0 };
         std::atomic<double>    sampleRateHz{ 48000.0 };
 
         int    head{ 0 };
