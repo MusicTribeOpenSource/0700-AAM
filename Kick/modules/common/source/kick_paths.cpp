@@ -22,6 +22,10 @@
 //common
 #define MT_SOURCE_SRCDIR "."
 
+#if KICK_EMU
+    #include "kick_emu_hal.h"
+#endif
+
 juce::File getAppDirs( DirType T )
 {
     auto seprator = juce::File::getSeparatorString();
@@ -45,17 +49,31 @@ juce::File getAppDirs( DirType T )
     if( T == MTAssets )
         return juce::File( "./assets" );
     else if( T == MTSamples )
+#if KICK_EMU
+        return juce::File( kick_emu::devicePath( "/data/sounds" ) ); // same place as on the unit
+#else
         return juce::File( "./data/samplesKick/" );
+#endif
     else if( T == MTDemos )
         return juce::File( "./demos" );
     else if( T == MTTemp )
         return juce::File( "./templates" );
+#if KICK_EMU
+    // Writable state lives in the emulated device root, like /home/Kick on the unit.
+    else if( T == MTProjects )
+        return juce::File( kick_emu::devicePath( "/home/Kick/projects/" ) );
+    else if( T == MTLog )
+        return juce::File( kick_emu::devicePath( "/home/Kick/logs/" ) );
+    else if( T == MTPrefs )
+        return juce::File( kick_emu::devicePath( "/home/Kick/prefs" ) );
+#else
     else if( T == MTProjects )
         return juce::File( "./projects" );
     else if( T == MTLog )
         return juce::File( "./logs/" );
     else if( T == MTPrefs )
         return juce::File( "./prefs" );
+#endif
 #elif defined( LINUX ) || defined( __linux__ )
     if( T == MTAssets )
         return juce::File( "/app/assets" );

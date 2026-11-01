@@ -1,0 +1,26 @@
+# Buildroot config fragment: turns KTKick_defconfig into a QEMU "virt" aarch64 image.
+# Apply with: Linux/buildroot/support/kconfig/merge_config.sh (see emu/qemu/build-image.sh).
+# SCAFFOLD: written from the KTKick defconfig, not built yet.
+
+# Mainline kernel, not the Variscite i.MX fork: the virt machine needs virtio drivers.
+# BR2_LINUX_KERNEL_CUSTOM_GIT, the custom config file and the i.MX DTS names are dropped
+# by emu/qemu/build-image.sh before merging.
+BR2_LINUX_KERNEL_USE_DEFCONFIG=y
+BR2_LINUX_KERNEL_DEFCONFIG="defconfig"
+BR2_LINUX_KERNEL_DTS_SUPPORT=n
+BR2_LINUX_KERNEL_IMAGE=y
+
+# Console and the control-surface UART. On the device Kick opens /dev/ttymxc0. On virt the
+# first extra PL011 UART (-serial) shows up as ttyAMA1. A systemd unit in the emulator
+# overlay symlinks /dev/ttymxc0 -> ttyAMA1 so Kick runs unmodified.
+BR2_TARGET_GENERIC_GETTY_PORT="ttyAMA0"
+
+# No i.MX bootloader or genimage flow. QEMU boots the kernel and rootfs directly.
+BR2_TARGET_UBOOT=n
+BR2_ROOTFS_POST_IMAGE_SCRIPT=""
+BR2_TARGET_ROOTFS_EXT2=y
+BR2_TARGET_ROOTFS_EXT2_4=y
+BR2_TARGET_ROOTFS_EXT2_SIZE="1G"
+
+# Audio and display through virtio.
+BR2_PACKAGE_ALSA_UTILS=y
