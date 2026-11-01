@@ -248,6 +248,191 @@ namespace kick_emu
         }
     }
 
+    namespace
+    {
+        /// A pointer that stays down between commands, so the Surface can forward a live drag
+        /// (down, many moves, up) from its screen bezel.
+        struct Pointer
+        {
+            juce::Component::SafePointer<juce::Component> target;
+            juce::Point<float>                            from;
+            juce::Time                                    downTime;
+        };
+
+        Pointer& pointer()
+        {
+            static Pointer p;
+            return p;
+        }
+
+        juce::MouseEvent pointerEvent( juce::Component& root, juce::Component& c, juce::Point<float> rootPos, bool pressed, bool dragged )
+        {
+            const auto source = juce::Desktop::getInstance().getMainMouseSource();
+            const auto mods   = pressed ? juce::ModifierKeys( juce::ModifierKeys::leftButtonModifier ) : juce::ModifierKeys();
+            auto&      ptr    = pointer();
+            return juce::MouseEvent( source, c.getLocalPoint( &root, rootPos ), mods, 1.0f, juce::MouseInputSource::defaultOrientation, juce::MouseInputSource::defaultRotation, 0.0f, 0.0f, &c, &c, juce::Time::getCurrentTime(), c.getLocalPoint( &root, ptr.from ), ptr.downTime, 1, dragged );
+        }
+
+        void pointerUp( juce::Component& root, juce::Point<float> at )
+        {
+            auto& ptr = pointer();
+            if( auto* c = ptr.target.getComponent() )
+            {
+                c->mouseUp( pointerEvent( root, *c, at, true, true ) );
+                c->mouseExit( pointerEvent( root, *c, at, false, false ) );
+            }
+            ptr.target = nullptr;
+        }
+
+        void pointerDown( juce::Component& root, juce::Point<float> at )
+        {
+            pointerUp( root, at );
+            auto* hit = root.getComponentAt( at.roundToInt() );
+            if( hit == nullptr )
+                hit = &root;
+            auto& ptr    = pointer();
+            ptr.target   = hit;
+            ptr.from     = at;
+            ptr.downTime = juce::Time::getCurrentTime();
+            hit->mouseEnter( pointerEvent( root, *hit, at, false, false ) );
+            hit->mouseDown( pointerEvent( root, *hit, at, true, false ) );
+        }
+
+        void pointerMove( juce::Component& root, juce::Point<float> at )
+        {
+            if( auto* c = pointer().target.getComponent() )
+                c->mouseDrag( pointerEvent( root, *c, at, true, true ) );
+        }
+    }
+
+    //==============================================================================
+    /// Streams Kick's window to the Surface so it can draw the screen inside the device bezel.
+    /// Wire format per frame: "KFRM", width, height, stride (little-endian int32 each), then
+    /// height rows of stride bytes in JUCE's native ARGB memory order. Frames go out only when the
+    /// pixels change, and every time a client connects.
+    class FrameStreamer : private juce::Thread
+        , private juce::Timer
+    {
+    public:
+        explicit FrameStreamer( juce::Component* w )
+            : juce::Thread( "kick_emu frames" )
+            , window( w )
+        {
+            const int port = env( "KICK_EMU_FRAME_PORT", "50903" ).getIntValue();
+            const int fps  = juce::jlimit( 1, 60, env( "KICK_EMU_FRAME_FPS", "30" ).getIntValue() );
+            if( listener.createListener( port, "127.0.0.1" ) )
+            {
+                log( "frame stream on 127.0.0.1:" + juce::String( port ) );
+                startThread();
+                startTimerHz( fps );
+            }
+            else
+                log( "frame stream: could not listen on port " + juce::String( port ) );
+        }
+
+        ~FrameStreamer() override
+        {
+            stopTimer();
+            signalThreadShouldExit();
+            wake.signal();
+            listener.close();
+            stopThread( 2000 );
+        }
+
+    private:
+        void timerCallback() override
+        {
+            auto* w = window.getComponent();
+            if( w == nullptr || !connected.load() )
+                return;
+            auto img = w->createComponentSnapshot( w->getLocalBounds(), true, 1.0f );
+            if( !img.isValid() )
+                return;
+
+            // 64-bit FNV-style hash over the pixel rows: cheap compared to the snapshot itself.
+            juce::Image::BitmapData bits( img, juce::Image::BitmapData::readOnly );
+            uint64_t                h = 1469598103934665603ull;
+            for( int y = 0; y < bits.height; ++y )
+            {
+                const auto* row = (const uint64_t*)bits.getLinePointer( y );
+                for( int x = 0; x < bits.width / 2; ++x )
+                    h = ( h ^ row[x] ) * 1099511628211ull;
+            }
+            const bool force = forceFrame.exchange( false );
+            if( !force && h == lastHash )
+                return;
+            lastHash = h;
+            {
+                const juce::ScopedLock sl( lock );
+                pending = img;
+            }
+            wake.signal();
+        }
+
+        void run() override
+        {
+            while( !threadShouldExit() )
+            {
+                std::unique_ptr<juce::StreamingSocket> c( listener.waitForNextConnection() );
+                if( c == nullptr )
+                    continue;
+                {
+                    const juce::ScopedLock sl( lock );
+                    pending = {};
+                }
+                forceFrame = true;
+                connected  = true;
+                while( !threadShouldExit() && c->isConnected() )
+                {
+                    if( !wake.wait( 200 ) )
+                        continue;
+                    juce::Image img;
+                    {
+                        const juce::ScopedLock sl( lock );
+                        img = pending;
+                    }
+                    if( !img.isValid() || !send( *c, img ) )
+                        break;
+                }
+                connected = false;
+            }
+        }
+
+        static bool send( juce::StreamingSocket& s, const juce::Image& img )
+        {
+            juce::Image::BitmapData bits( img, juce::Image::BitmapData::readOnly );
+            char                    header[16] = { 'K', 'F', 'R', 'M' };
+            const int w = bits.width, h = bits.height, stride = w * 4;
+            const int fields[3] = { w, h, stride };
+            for( int i = 0; i < 3; ++i )
+                for( int b = 0; b < 4; ++b )
+                    header[4 + i * 4 + b] = (char)( ( (unsigned)fields[i] >> ( 8 * b ) ) & 0xff );
+            if( s.write( header, 16 ) != 16 )
+                return false;
+            for( int y = 0; y < h; ++y )
+            {
+                const char* row = (const char*)bits.getLinePointer( y );
+                int         done = 0;
+                while( done < stride )
+                {
+                    const int n = s.write( row + done, stride - done );
+                    if( n <= 0 )
+                        return false;
+                    done += n;
+                }
+            }
+            return true;
+        }
+
+        juce::Component::SafePointer<juce::Component> window;
+        juce::StreamingSocket                         listener;
+        juce::CriticalSection                         lock;
+        juce::Image                                   pending;
+        juce::WaitableEvent                           wake;
+        std::atomic<bool>                             connected{ false }, forceFrame{ false };
+        uint64_t                                      lastHash{ 0 };
+    };
+
     class Host::ControlServer : private juce::Thread
     {
     public:
@@ -303,7 +488,15 @@ namespace kick_emu
                 {
                     const auto line = pending.substring( 0, nl ).trim();
                     pending         = pending.substring( nl + 1 );
-                    if( line.isNotEmpty() )
+                    if( line.startsWith( "!" ) )
+                    {
+                        // Silent commands (live pointer events) get no reply, so a fast stream of
+                        // moves cannot fill the client's receive buffer.
+                        const auto reply = handle( line.substring( 1 ) );
+                        if( reply.startsWith( "error unknown command" ) )
+                            return;
+                    }
+                    else if( line.isNotEmpty() )
                     {
                         const auto reply = handle( line );
                         const auto out   = reply + "\n";
@@ -393,6 +586,18 @@ namespace kick_emu
                 return "ok " + touch( *w, p1, p2, 12, a.size() >= 6 ? a[5].getIntValue() : 40 );
             }
 
+            if( ( cmd == "down" || cmd == "move" || cmd == "up" ) && a.size() >= 3 )
+            {
+                const juce::Point<float> p( a[1].getFloatValue(), a[2].getFloatValue() );
+                if( cmd == "down" )
+                    pointerDown( *w, p );
+                else if( cmd == "move" )
+                    pointerMove( *w, p );
+                else
+                    pointerUp( *w, p );
+                return "ok";
+            }
+
             return "error unknown command " + cmd;
         }
 
@@ -418,12 +623,21 @@ namespace kick_emu
             juce::File( devicePath( dir ) ).createDirectory();
         if( !server )
             server = std::make_unique<ControlServer>();
+        if( !frames )
+            frames = std::make_unique<FrameStreamer>( Window );
+
+        // The Surface draws Kick's screen inside the device bezel, so Kick's own window gets out
+        // of the way. KICK_EMU_SHOW_WINDOW=1 keeps it up for debugging.
+        if( env( "KICK_EMU_SHOW_WINDOW", "0" ) != "1" )
+            if( auto* dw = dynamic_cast<juce::DocumentWindow*>( Window ) )
+                dw->setMinimised( true );
         notify( "app started" );
     }
 
     void Host::stop()
     {
         notify( "app stopped" );
+        frames.reset();
         server.reset();
     }
 }
