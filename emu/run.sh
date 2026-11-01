@@ -13,7 +13,11 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KICK_BIN="$REPO/build/emu/Kick.app/Contents/MacOS/Kick"
-SURFACE_BIN="$REPO/build/surface/KickSurface_artefacts/KICK Surface.app/Contents/MacOS/KICK Surface"
+# Single-config builds put the app under KickSurface_artefacts/<Config>/, older configures at the top.
+SURFACE_BIN=""
+for candidate in "$REPO"/build/surface/KickSurface_artefacts/{Release,Debug,.}/"KICK Surface.app/Contents/MacOS/KICK Surface"; do
+    [[ -x "$candidate" ]] && { SURFACE_BIN="$candidate"; break; }
+done
 
 SCRIPT=""
 USE_SURFACE=1
@@ -31,7 +35,7 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-[[ -x "$KICK_BIN" && -x "$SURFACE_BIN" ]] || { echo "not built yet: run emu/build.sh" >&2; exit 1; }
+[[ -x "$KICK_BIN" && -n "$SURFACE_BIN" ]] || { echo "not built yet: run emu/build.sh" >&2; exit 1; }
 
 mkdir -p "$KICK_EMU_ROOT"
 [[ -d "$KICK_EMU_ROOT/data/sounds/Emu Kit" ]] || python3 "$REPO/emu/tools/make_samples.py" "$KICK_EMU_ROOT"

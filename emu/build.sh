@@ -30,4 +30,4 @@ cmake -S "$REPO/emu/surface" -B "$REPO/build/surface" -G Ninja -DCMAKE_BUILD_TYP
     || { tail -30 "$REPO/build/surface-configure.log"; exit 1; }
 cmake --build "$REPO/build/surface" -j "$JOBS"
 
-echo "built: $REPO/build/emu/Kick.app and $REPO/build/surface/KickSurface_artefacts/KICK Surface.app"
+echo "built: $REPO/build/emu/Kick.app and $REPO/build/surface/KickSurface_artefacts/$BUILD_TYPE/KICK Surface.app"

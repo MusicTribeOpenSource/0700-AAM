@@ -15,7 +15,7 @@ PORT=50910
 [[ -f "$IMG/Image" && -f "$IMG/rootfs.ext4" ]] || { echo "missing $IMG/Image or rootfs.ext4: run emu/qemu/build-image.sh" >&2; exit 1; }
 command -v qemu-system-aarch64 >/dev/null || { echo "install qemu: brew install qemu" >&2; exit 1; }
 
-SURFACE_BIN="$REPO/build/surface/KickSurface_artefacts/KICK Surface.app/Contents/MacOS/KICK Surface"
+SURFACE_BIN="$(ls -d "$REPO"/build/surface/KickSurface_artefacts/*/"KICK Surface.app"/Contents/MacOS/"KICK Surface" | head -1)"
 "$SURFACE_BIN" --root "${KICK_EMU_ROOT:-$HOME/KickEmu}" --tcp "$PORT" >/dev/null 2>&1 &
 SURFACE_PID=$!
 trap 'kill $SURFACE_PID 2>/dev/null || true' EXIT

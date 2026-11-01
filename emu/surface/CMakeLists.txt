@@ -22,6 +22,7 @@ add_subdirectory(${KICK_JUCE_DIR} juce)
 juce_add_gui_app(KickSurface
     PRODUCT_NAME "KICK Surface"
     COMPANY_NAME "Bombest"
+    ICON_BIG "${CMAKE_CURRENT_LIST_DIR}/icon/KickSurface.png"
 )
 
 target_sources(KickSurface PRIVATE Main.cpp)
