@@ -621,7 +621,7 @@ namespace
                 g.setColour( juce::Colour( 0xff2a2d36 ) );
                 g.fillEllipse( r.withSizeKeepingCentre( 44, 44 ).translated( 0, -6 ) );
                 auto c = r.getCentre().translated( 0, -6 );
-                const float a = knobAngle[(size_t)i];
+                const float a = knobAngle[(size_t)( i + 1 )]; // index 0 is the centre encoder
                 g.setColour( juce::Colours::orange );
                 g.drawLine( c.x, c.y, c.x + std::sin( a ) * 18.0f, c.y - std::cos( a ) * 18.0f, 3.0f );
                 g.setColour( juce::Colours::grey );
@@ -899,13 +899,20 @@ namespace
         //==============================================================================
         juce::String lastLog() const { return logLines.empty() ? juce::String() : logLines.back(); }
 
-    private:
         void nudgeKnob( int knob, int steps )
         {
-            knobAngle[(size_t)knob] += (float)steps * 0.25f;
+            if( !juce::isPositiveAndBelow( knob, numKnobs + 1 ) )
+                return;
+            auto& angle = knobAngle[(size_t)knob];
+            angle += (float)steps * ( knob == knobCenter ? 0.25f : 0.1f );
+            // Q-Link knobs are endless encoders but read like pots on screen: stop at +-135 degrees.
+            // The centre encoder is a free-spinning dial.
+            if( knob != knobCenter )
+                angle = juce::jlimit( -2.356f, 2.356f, angle );
             turnKnob( knob, steps );
         }
 
+    private:
         void timerCallback() override
         {
             if( link.isUp() )
@@ -1201,7 +1208,7 @@ namespace
                     onMain( [&] { surface.buttonUp( id ); } );
                 }
                 else if( cmd == "knob" )
-                    onMain( [&] { surface.turnKnob( t[1].getIntValue(), t[2].getIntValue() ); } );
+                    onMain( [&] { surface.nudgeKnob( t[1].getIntValue(), t[2].getIntValue() ); } );
                 else if( cmd == "slider" )
                 {
                     onMain( [&] { surface.setStrip( t[1].getIntValue() ); } );
