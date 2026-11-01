@@ -1,4 +1,7 @@
 #include "kick_SWUpdateScreen.h"
+#if KICK_EMU
+    #include "kick_emu_hal.h"
+#endif
 namespace kick_ui
 {
     SWUpdateScreen::SWUpdateScreen()
@@ -122,7 +125,11 @@ namespace kick_ui
             mt::utils::showDialog( "SUCCESS!", warningPopup, [&]( int R ) {
                 if( R == UI::APPLY )
                 {
+                    #if KICK_EMU
+                    if( kick_emu::shell( "reboot -nf" ) == 0 )
+#else
                     if( system( "reboot -nf" ) == 0 )
+#endif
                         DBG( "Rebooting the device so new firmware will apply" );
                 }
                 else if( R == UI::CANCEL )

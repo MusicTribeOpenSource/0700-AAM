@@ -1,0 +1,10 @@
+# Headless smoke test. Run: emu/run.sh --script emu/tests/smoke.script
+# Waits for the serial handshake, boots, presses pads and a button, snapshots the Surface.
+expect connected
+wait 24000
+pad 1 100 300
+wait 1500
+button Pad Mix
+wait 2000
+snapshot /tmp/kickemu-smoke.png
+quit

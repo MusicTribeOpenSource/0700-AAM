@@ -29,6 +29,10 @@
     #include "melatonin_perfetto/melatonin_perfetto.h"
 #endif
 
+#if KICK_EMU
+    #include <kick_emu/kick_emu.h>
+#endif
+
 #define ENABLE_X11_FULLSCREEN ( 0 )
 
 #if defined( ENABLE_X11_FULLSCREEN ) && ( 0 < ENABLE_X11_FULLSCREEN )
@@ -175,6 +179,10 @@ public:
         // Visibility...
         w->setVisible( true );
 
+#if KICK_EMU
+        kick_emu::Host::get().start( w.get() );
+#endif
+
 #if PERFETTO
         MelatoninPerfetto::get().beginSession();
 #endif
@@ -186,6 +194,9 @@ public:
         MelatoninPerfetto::get().endSession();
 #endif
         // Add your application's shutdown code here ...
+#if KICK_EMU
+        kick_emu::Host::get().stop();
+#endif
         w = nullptr;
         adapter = nullptr;
     }

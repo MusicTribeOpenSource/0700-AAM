@@ -27,6 +27,8 @@
     #include <unistd.h>
 #endif
 
+#include <sys/stat.h>
+
 #define WIFI_CRED_FILE "/home/Kick/wifi_credentials.txt"
 #define WIFI_CONF_FILE "/home/Kick/wpa_supplicant.conf"
 
