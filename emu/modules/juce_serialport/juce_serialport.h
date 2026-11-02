@@ -4,7 +4,7 @@
   ID:                 juce_serialport
   vendor:             Bombest
   version:            0.1.0
-  name:               POSIX serial port (clean-room stand-in)
+  name:               Serial port (clean-room stand-in)
   description:        Serial port classes with the API Kick's input_events module expects
   website:
   license:            AGPLv3
@@ -20,8 +20,10 @@
  * calls Kick makes (Kick/modules/input_events/input_events.cpp), not from the
  * original source.
  *
- * POSIX only (Linux and macOS). It opens real UARTs such as /dev/ttymxc0 and
- * pseudo-terminals such as the one the KICK Surface emulator creates.
+ * Two backends. A POSIX tty (Linux and macOS) opens real UARTs such as /dev/ttymxc0 and
+ * pseudo-terminals such as the one the KICK Surface emulator creates. A path of the form
+ * tcp://host:port connects to a TCP server instead, on every OS, and is how the emulator
+ * reaches the Surface on Windows, which has no pty.
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
@@ -34,6 +36,7 @@
     #include <juce_events/juce_events.h>
 
     #include <functional>
+    #include <memory>
     #include <mutex>
 
 class SerialPortConfig
@@ -79,19 +82,31 @@ public:
 
     bool open( const juce::String& path );
     void close();
-    bool exists() const noexcept { return fd >= 0; }
+    bool exists() const noexcept;
     bool setConfig( const SerialPortConfig& config );
 
-    int  getFd() const noexcept { return fd; }
     const juce::String& getPortPath() const noexcept { return portPath; }
+
+    /// 1 when bytes can be read, 0 on timeout, -1 when the port is closed or the peer hung up.
+    int waitReadable( int timeoutMs );
+    /// Bytes read (> 0), 0 when nothing is available, -1 on a closed port.
+    int readSome( void* dst, int maxBytes );
+    bool writeAll( const void* data, size_t numBytes );
+    void drain();
+    /// True for a tcp:// port, which the input thread reconnects when the peer goes away.
+    bool isTcp() const noexcept { return portPath.startsWith( "tcp://" ); }
 
     /// Lists tty devices: key is the friendly name, value the path.
     static juce::StringPairArray getSerialPortPaths();
 
 private:
+    std::shared_ptr<juce::StreamingSocket> getSocket() const;
+
     int          fd = -1;
     juce::String portPath;
     DebugFn      debugFn;
+    mutable std::mutex                     socketLock;
+    std::shared_ptr<juce::StreamingSocket> socket;
 
     JUCE_DECLARE_NON_COPYABLE( SerialPort )
 };

@@ -4,19 +4,19 @@
 
 #include "juce_serialport.h"
 
-#if JUCE_WINDOWS
-    #error "juce_serialport stand-in is POSIX only"
-#endif
-
 #include <cerrno>
 #include <cstring>
-#include <fcntl.h>
-#include <poll.h>
-#include <termios.h>
-#include <unistd.h>
+
+#if !JUCE_WINDOWS
+    #include <fcntl.h>
+    #include <poll.h>
+    #include <termios.h>
+    #include <unistd.h>
+#endif
 
 namespace
 {
+#if !JUCE_WINDOWS
     speed_t toSpeed( int bps )
     {
         switch( bps )
@@ -30,6 +30,7 @@ namespace
             default: return B230400;
         }
     }
+#endif
 }
 
 //==============================================================================
@@ -49,7 +50,31 @@ bool SerialPort::open( const juce::String& path )
 {
     close();
     portPath = path;
-    fd       = ::open( path.toRawUTF8(), O_RDWR | O_NOCTTY | O_NONBLOCK );
+
+    if( isTcp() )
+    {
+        // tcp://host:port
+        const auto   hostPort = path.fromFirstOccurrenceOf( "tcp://", false, false );
+        const auto   host     = hostPort.upToLastOccurrenceOf( ":", false, false );
+        const int    port     = hostPort.fromLastOccurrenceOf( ":", false, false ).getIntValue();
+        auto         sock     = std::make_shared<juce::StreamingSocket>();
+        if( host.isEmpty() || port <= 0 || !sock->connect( host, port, 2000 ) )
+        {
+            if( debugFn )
+                debugFn( "SerialPort: tcp connect failed " + path, {} );
+            return false;
+        }
+        std::lock_guard<std::mutex> g( socketLock );
+        socket = sock;
+        return true;
+    }
+
+#if JUCE_WINDOWS
+    if( debugFn )
+        debugFn( "SerialPort: only tcp:// ports are supported on Windows: " + path, {} );
+    return false;
+#else
+    fd = ::open( path.toRawUTF8(), O_RDWR | O_NOCTTY | O_NONBLOCK );
     if( fd < 0 )
     {
         if( debugFn )
@@ -57,19 +82,135 @@ bool SerialPort::open( const juce::String& path )
         return false;
     }
     return true;
+#endif
 }
 
 void SerialPort::close()
 {
+    {
+        std::lock_guard<std::mutex> g( socketLock );
+        if( socket )
+            socket->close();
+        socket.reset();
+    }
+#if !JUCE_WINDOWS
     if( fd >= 0 )
         ::close( fd );
+#endif
     fd = -1;
+}
+
+std::shared_ptr<juce::StreamingSocket> SerialPort::getSocket() const
+{
+    std::lock_guard<std::mutex> g( socketLock );
+    return socket;
+}
+
+bool SerialPort::exists() const noexcept
+{
+    if( fd >= 0 )
+        return true;
+    auto s = getSocket();
+    return s != nullptr && s->isConnected();
+}
+
+int SerialPort::waitReadable( int timeoutMs )
+{
+    if( auto s = getSocket() )
+    {
+        const int r = s->waitUntilReady( true, timeoutMs );
+        return r < 0 || !s->isConnected() ? -1 : r;
+    }
+#if !JUCE_WINDOWS
+    if( fd >= 0 )
+    {
+        pollfd pfd{ fd, POLLIN, 0 };
+        const int r = ::poll( &pfd, 1, timeoutMs );
+        if( r > 0 && ( pfd.revents & POLLIN ) == 0 )
+            return 0; // POLLHUP on a pty means the other side closed. The caller backs off and retries.
+        return r < 0 ? 0 : r;
+    }
+#endif
+    return -1;
+}
+
+int SerialPort::readSome( void* dst, int maxBytes )
+{
+    if( auto s = getSocket() )
+    {
+        const int n = s->read( dst, maxBytes, false );
+        return n > 0 ? n : -1; // waitReadable said data was ready, so 0 or less is a hang-up
+    }
+#if !JUCE_WINDOWS
+    if( fd >= 0 )
+    {
+        const auto n = ::read( fd, dst, (size_t)maxBytes );
+        return n > 0 ? (int)n : 0;
+    }
+#endif
+    return -1;
+}
+
+bool SerialPort::writeAll( const void* data, size_t numBytes )
+{
+    if( auto s = getSocket() )
+    {
+        auto*  p    = static_cast<const char*>( data );
+        size_t left = numBytes;
+        while( left > 0 )
+        {
+            const int n = s->write( p, (int)left );
+            if( n <= 0 )
+                return false;
+            p += n;
+            left -= (size_t)n;
+        }
+        return true;
+    }
+#if !JUCE_WINDOWS
+    if( fd >= 0 )
+    {
+        auto*  p     = static_cast<const char*>( data );
+        size_t left  = numBytes;
+        int    spins = 0;
+        while( left > 0 )
+        {
+            const auto n = ::write( fd, p, left );
+            if( n > 0 )
+            {
+                p += n;
+                left -= (size_t)n;
+                continue;
+            }
+            if( n < 0 && ( errno == EAGAIN || errno == EWOULDBLOCK ) && ++spins < 100 )
+            {
+                juce::Thread::sleep( 1 );
+                continue;
+            }
+            return false;
+        }
+        return true;
+    }
+#endif
+    return false;
+}
+
+void SerialPort::drain()
+{
+#if !JUCE_WINDOWS
+    if( fd >= 0 )
+        tcdrain( fd );
+#endif
 }
 
 bool SerialPort::setConfig( const SerialPortConfig& config )
 {
+#if JUCE_WINDOWS
+    juce::ignoreUnused( config );
+    return exists(); // baud, parity and flow control mean nothing to a TCP stream
+#else
     if( fd < 0 )
-        return false;
+        return exists(); // a tcp:// port has no line settings
 
     termios tio{};
     if( tcgetattr( fd, &tio ) != 0 )
@@ -109,16 +250,19 @@ bool SerialPort::setConfig( const SerialPortConfig& config )
     if( tcsetattr( fd, TCSANOW, &tio ) != 0 && debugFn )
         debugFn( "SerialPort: tcsetattr failed " + portPath, juce::String( std::strerror( errno ) ) );
     return true;
+#endif
 }
 
 juce::StringPairArray SerialPort::getSerialPortPaths()
 {
     juce::StringPairArray result;
+#if !JUCE_WINDOWS
     juce::Array<juce::File> files;
     juce::File( "/dev" ).findChildFiles( files, juce::File::findFiles, false, "tty*" );
     juce::File( "/dev" ).findChildFiles( files, juce::File::findFiles, false, "cu.*" );
     for( auto& f : files )
         result.set( f.getFileName(), f.getFullPathName() );
+#endif
 
     // An emulator pty usually lives under /dev/ttys* (macOS) or /dev/pts/* (Linux).
     auto emuPort = juce::SystemStats::getEnvironmentVariable( "KICK_SERIAL_PORT", {} );
@@ -171,26 +315,35 @@ void SerialPortInputStream::run()
 
     while( !threadShouldExit() )
     {
-        const int fd = port != nullptr ? port->getFd() : -1;
-        if( fd < 0 )
+        if( port == nullptr )
         {
             wait( 100 );
             continue;
         }
 
-        pollfd pfd{ fd, POLLIN, 0 };
-        const int r = ::poll( &pfd, 1, 50 );
-        if( r <= 0 || ( pfd.revents & POLLIN ) == 0 )
+        const int ready = port->waitReadable( 50 );
+        if( ready < 0 )
         {
-            // POLLHUP on a pty means the other side closed. Back off and retry.
-            if( r > 0 && ( pfd.revents & ( POLLHUP | POLLERR ) ) )
-                wait( 100 );
+            // Closed, or a TCP peer that went away. A TCP port is reopened so the Surface can restart.
+            wait( 200 );
+            if( port->isTcp() && !threadShouldExit() )
+                port->open( port->getPortPath() );
             continue;
         }
-
-        const auto got = ::read( fd, chunk, sizeof( chunk ) );
-        if( got <= 0 )
+        if( ready == 0 )
             continue;
+
+        const int got = port->readSome( chunk, (int)sizeof( chunk ) );
+        if( got < 0 )
+        {
+            port->close(); // next pass sees ready < 0 and reconnects when the port is TCP
+            continue;
+        }
+        if( got == 0 )
+        {
+            wait( 20 );
+            continue;
+        }
 
         bool notify = false;
         {
@@ -214,33 +367,11 @@ void SerialPortInputStream::run()
 //==============================================================================
 bool SerialPortOutputStream::write( const void* data, size_t numBytes )
 {
-    if( port == nullptr || port->getFd() < 0 )
-        return false;
-
-    auto*  p    = static_cast<const char*>( data );
-    size_t left = numBytes;
-    int    spins = 0;
-    while( left > 0 )
-    {
-        const auto n = ::write( port->getFd(), p, left );
-        if( n > 0 )
-        {
-            p += n;
-            left -= (size_t)n;
-            continue;
-        }
-        if( n < 0 && ( errno == EAGAIN || errno == EWOULDBLOCK ) && ++spins < 100 )
-        {
-            juce::Thread::sleep( 1 );
-            continue;
-        }
-        return false;
-    }
-    return true;
+    return port != nullptr && port->writeAll( data, numBytes );
 }
 
 void SerialPortOutputStream::flush()
 {
-    if( port != nullptr && port->getFd() >= 0 )
-        tcdrain( port->getFd() );
+    if( port != nullptr )
+        port->drain();
 }

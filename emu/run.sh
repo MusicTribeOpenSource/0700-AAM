@@ -5,7 +5,7 @@
 #   emu/run.sh --script file        drive the Surface from a script, exit with its result
 #   emu/run.sh --root DIR           emulated device root (default ~/KickEmu)
 #   emu/run.sh --no-surface         Kick only (set KICK_SERIAL_PORT yourself)
-#   emu/run.sh --tcp PORT           Surface listens on TCP for QEMU instead of opening a pty
+#   emu/run.sh --tcp PORT           Surface listens on TCP instead of opening a pty; Kick connects to it
 #
 # Environment: KICK_EMU_ROOT, KICK_EMU_CONTROL_PORT (50901), KICK_EMU_EVENT_PORT (50902),
 # KICK_AUDIO_DEVICE (CoreAudio device name; default system output).
@@ -47,7 +47,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 if [[ "$USE_SURFACE" == 1 ]]; then
-    rm -f "$KICK_EMU_ROOT/dev/ttymxc0"
+    rm -f "$KICK_EMU_ROOT/dev/ttymxc0" "$KICK_EMU_ROOT/surface.port"
     SURFACE_ARGS=(--root "$KICK_EMU_ROOT")
     [[ -n "$SCRIPT" ]] && SURFACE_ARGS+=(--script "$SCRIPT")
     [[ -n "$TCP_PORT" ]] && SURFACE_ARGS+=(--tcp "$TCP_PORT")
@@ -62,6 +62,14 @@ if [[ "$USE_SURFACE" == 1 ]]; then
             sleep 0.1
         done
         export KICK_SERIAL_PORT="$KICK_EMU_ROOT/dev/ttymxc0"
+    else
+        # Kick sends its first message as soon as it connects, so the listener has to exist by then.
+        for _ in $(seq 1 50); do
+            [[ -e "$KICK_EMU_ROOT/surface.port" ]] && break
+            kill -0 "$SURFACE_PID" 2>/dev/null || { cat "$KICK_EMU_ROOT/surface.log" >&2; exit 1; }
+            sleep 0.1
+        done
+        export KICK_SERIAL_PORT="tcp://127.0.0.1:$TCP_PORT"
     fi
 fi
 

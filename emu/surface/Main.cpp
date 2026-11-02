@@ -20,15 +20,14 @@
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <poll.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <termios.h>
-#include <unistd.h>
+#if !JUCE_WINDOWS
+    #include <fcntl.h>
+    #include <poll.h>
+    #include <stdlib.h>
+    #include <sys/stat.h>
+    #include <termios.h>
+    #include <unistd.h>
+#endif
 
 #include <array>
 #include <atomic>
@@ -182,7 +181,8 @@ namespace
     }
 
     //==============================================================================
-    /// The serial line to Kick: a pty by default, or a TCP listener for QEMU's serial chardev.
+    /// The serial line to Kick: a pty by default (not on Windows), or a TCP listener. Kick
+    /// connects to the listener through a tcp:// KICK_SERIAL_PORT, and QEMU's serial chardev does too.
     class Link : private juce::Thread
     {
     public:
@@ -200,6 +200,7 @@ namespace
 
         std::function<void( const Frame& )> onFrame;
 
+#if !JUCE_WINDOWS
         /// Opens a pty and returns the slave path. The slave stays open here so the
         /// master never sees a hang-up when Kick opens and closes its end.
         juce::String openPty()
@@ -224,23 +225,17 @@ namespace
             startThread();
             return path;
         }
+#endif
 
         bool listenTcp( int port )
         {
-            listenFd = socket( AF_INET, SOCK_STREAM, 0 );
-            int one  = 1;
-            setsockopt( listenFd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof( one ) );
-            sockaddr_in addr{};
-            addr.sin_family      = AF_INET;
-            addr.sin_port        = htons( (uint16_t)port );
-            addr.sin_addr.s_addr = htonl( INADDR_LOOPBACK );
-            if( bind( listenFd, (sockaddr*)&addr, sizeof( addr ) ) != 0 || listen( listenFd, 1 ) != 0 )
+            if( !listener.createListener( port, "127.0.0.1" ) )
                 return false;
             startThread();
             return true;
         }
 
-        bool isUp() const { return dataFd.load() >= 0; }
+        bool isUp() const { return dataFd.load() >= 0 || tcpUp.load(); }
 
         void send( int type, int cmd, const std::vector<int>& data )
         {
@@ -251,7 +246,24 @@ namespace
             out.push_back( '\n' ); // trailing byte Kick's reader counts in its frame length
 
             std::lock_guard<std::mutex> g( writeLock );
-            const int                   fd = dataFd.load();
+            if( tcpUp.load() )
+            {
+                std::lock_guard<std::mutex> cg( clientLock );
+                if( client != nullptr )
+                {
+                    size_t sent = 0;
+                    while( sent < out.size() )
+                    {
+                        const int n = client->write( out.data() + sent, (int)( out.size() - sent ) );
+                        if( n <= 0 )
+                            return;
+                        sent += (size_t)n;
+                    }
+                }
+                return;
+            }
+#if !JUCE_WINDOWS
+            const int fd = dataFd.load();
             if( fd < 0 )
                 return;
             size_t sent = 0;
@@ -267,42 +279,70 @@ namespace
                 if( poll( &p, 1, 200 ) <= 0 )
                     return; // Kick is not reading; drop the frame instead of blocking the UI
             }
+#endif
         }
 
     private:
         void closeFds()
         {
-            for( int* fd : { &masterFd, &slaveFd, &clientFd, &listenFd } )
+#if !JUCE_WINDOWS
+            for( int* fd : { &masterFd, &slaveFd } )
                 if( *fd >= 0 )
                 {
                     ::close( *fd );
                     *fd = -1;
                 }
+#endif
             dataFd = -1;
+            tcpUp  = false;
+            {
+                std::lock_guard<std::mutex> cg( clientLock );
+                client.reset();
+            }
+            listener.close();
         }
 
         void run() override
         {
             while( !threadShouldExit() )
             {
-                if( listenFd >= 0 && clientFd < 0 )
+                if( listener.isConnected() )
                 {
-                    pollfd p{ listenFd, POLLIN, 0 };
-                    if( poll( &p, 1, 200 ) > 0 )
+                    if( !tcpUp.load() )
                     {
-                        clientFd = accept( listenFd, nullptr, nullptr );
-                        if( clientFd >= 0 )
+                        if( listener.waitUntilReady( true, 200 ) > 0 )
                         {
-                            fcntl( clientFd, F_SETFL, fcntl( clientFd, F_GETFL ) | O_NONBLOCK );
-                            int one = 1;
-                            setsockopt( clientFd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof( one ) );
-                            dataFd = clientFd;
-                            reset();
+                            std::unique_ptr<juce::StreamingSocket> accepted( listener.waitForNextConnection() );
+                            if( accepted != nullptr )
+                            {
+                                std::lock_guard<std::mutex> cg( clientLock );
+                                client = std::move( accepted );
+                                tcpUp  = true;
+                                reset();
+                            }
                         }
+                        continue;
+                    }
+
+                    if( client->waitUntilReady( true, 100 ) <= 0 )
+                        continue;
+                    uint8_t   buf[512];
+                    const int n = client->read( buf, (int)sizeof( buf ), false );
+                    if( n > 0 )
+                    {
+                        for( int i = 0; i < n; ++i )
+                            feed( buf[i] );
+                    }
+                    else
+                    {
+                        std::lock_guard<std::mutex> cg( clientLock );
+                        client.reset();
+                        tcpUp = false;
                     }
                     continue;
                 }
 
+#if !JUCE_WINDOWS
                 const int fd = dataFd.load();
                 pollfd    p{ fd, POLLIN, 0 };
                 if( poll( &p, 1, 100 ) <= 0 )
@@ -315,14 +355,11 @@ namespace
                     for( ssize_t i = 0; i < n; ++i )
                         feed( buf[i] );
                 }
-                else if( clientFd >= 0 && n == 0 )
-                {
-                    ::close( clientFd );
-                    clientFd = -1;
-                    dataFd   = -1;
-                }
                 else
                     juce::Thread::sleep( 10 );
+#else
+                juce::Thread::sleep( 50 );
+#endif
             }
         }
 
@@ -387,9 +424,14 @@ namespace
             }
         }
 
-        int              masterFd{ -1 }, slaveFd{ -1 }, listenFd{ -1 }, clientFd{ -1 };
-        std::atomic<int> dataFd{ -1 };
-        std::mutex       writeLock;
+#if !JUCE_WINDOWS
+        int masterFd{ -1 }, slaveFd{ -1 };
+#endif
+        std::atomic<int>                       dataFd{ -1 };
+        std::atomic<bool>                      tcpUp{ false };
+        std::mutex                             writeLock, clientLock;
+        juce::StreamingSocket                  listener;
+        std::unique_ptr<juce::StreamingSocket> client;
 
         State                state{ Hdr1 };
         std::vector<uint8_t> raw;
@@ -678,6 +720,7 @@ namespace
         ~Surface() override { link.onFrame = nullptr; }
 
         void setTtyLabel( const juce::String& s ) { ttyLabel = s; }
+        const juce::File& deviceRoot() const { return root; }
 
         //==============================================================================
         // Input, shared by the mouse, the keyboard and the script runner (message thread).
@@ -1705,7 +1748,8 @@ namespace
                     onMain( [=] { surface.setUsb( t[1] == "in" ); } );
                 else if( cmd == "snapshot" )
                 {
-                    const auto file = juce::File::getCurrentWorkingDirectory().getChildFile( t[1] );
+                    // A relative name lands in the device root, so a script does not depend on the cwd or the OS.
+                    const auto file = juce::File::isAbsolutePath( t[1] ) ? juce::File( t[1] ) : surface.deviceRoot().getChildFile( t[1] );
                     onMain( [=] {
                         auto img = surface.createComponentSnapshot( surface.getLocalBounds() );
                         file.deleteFile();
@@ -1801,21 +1845,29 @@ namespace
             root.getChildFile( "dev" ).createDirectory();
 
             juce::String ttyLabel;
-            if( opt( "--tcp" ).isNotEmpty() )
+            // Windows has no pty, so it always serves the line over TCP.
+#if JUCE_WINDOWS
+            const int tcpPort = opt( "--tcp" ).isNotEmpty() ? opt( "--tcp" ).getIntValue() : 50910;
+#else
+            const int tcpPort = opt( "--tcp" ).isNotEmpty() ? opt( "--tcp" ).getIntValue() : 0;
+#endif
+            if( tcpPort > 0 )
             {
-                const int port = opt( "--tcp" ).getIntValue();
-                if( !link.listenTcp( port ) )
+                if( !link.listenTcp( tcpPort ) )
                 {
-                    std::cerr << "KickSurface: cannot listen on TCP port " << port << std::endl;
+                    std::cerr << "KickSurface: cannot listen on TCP port " << tcpPort << std::endl;
                     setApplicationReturnValue( 2 );
                     quit();
                     return;
                 }
-                ttyLabel = "serial: tcp 127.0.0.1:" + juce::String( port );
-                std::cout << "KICK_SERIAL_TCP=" << port << std::endl;
+                ttyLabel = "serial: tcp 127.0.0.1:" + juce::String( tcpPort );
+                std::cout << "KICK_SERIAL_TCP=" << tcpPort << std::endl;
+                // A GUI app on Windows has no console, so the launcher reads the address from here.
+                root.getChildFile( "surface.port" ).replaceWithText( "tcp://127.0.0.1:" + juce::String( tcpPort ) );
             }
             else
             {
+#if !JUCE_WINDOWS
                 const auto slave = link.openPty();
                 if( slave.isEmpty() )
                 {
@@ -1830,6 +1882,7 @@ namespace
                 ttyLabel = "serial: " + linkFile.getFullPathName();
                 std::cout << "KICK_SERIAL_PORT=" << linkFile.getFullPathName() << std::endl;
                 std::cout << "KICK_SERIAL_PTY=" << slave << std::endl;
+#endif
             }
 
             window = std::make_unique<Window>( root, link );

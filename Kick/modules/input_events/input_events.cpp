@@ -44,9 +44,10 @@ namespace Controls
         {
 #if( JUCE_LINUX || __linux__ || KICK_EMU )
 #if KICK_EMU
-            // The emulator's control surface is a pty; KICK_SERIAL_PORT names its slave side.
+            // The emulator's control surface is a pty; KICK_SERIAL_PORT names its slave side,
+            // or a tcp://host:port address where there is no pty (Windows).
             juce::String serialDev = juce::SystemStats::getEnvironmentVariable( "KICK_SERIAL_PORT", {} );
-            if( serialDev.isNotEmpty() && juce::File( serialDev ).exists() )
+            if( serialDev.isNotEmpty() && ( serialDev.startsWith( "tcp://" ) || juce::File( serialDev ).exists() ) )
             {
 #else
             if( juce::File( "/dev/ttymxc0" ).exists() )

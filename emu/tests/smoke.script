@@ -6,5 +6,5 @@ pad 1 100 300
 wait 1500
 button Pad Mix
 wait 2000
-snapshot /tmp/kickemu-smoke.png
+snapshot smoke-surface.png
 quit
