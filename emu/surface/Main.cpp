@@ -672,10 +672,12 @@ namespace
             , root( deviceRoot )
         {
             setWantsKeyboardFocus( true );
-            link.onFrame = [this]( const Frame& f ) {
-                juce::MessageManager::callAsync( [safe = juce::Component::SafePointer<Surface>( this ), f] {
-                    if( safe != nullptr )
-                        safe->handleFrame( f );
+            // The pointer is made here, not inside the lambda: MSVC reads `this` in a nested lambda as const.
+            const juce::Component::SafePointer<Surface> self( this );
+            link.onFrame = [self]( const Frame& f ) {
+                juce::MessageManager::callAsync( [self, f] {
+                    if( self != nullptr )
+                        self->handleFrame( f );
                 } );
             };
 
