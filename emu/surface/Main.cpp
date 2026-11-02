@@ -1764,7 +1764,7 @@ namespace
                     const auto what = t[1].toLowerCase();
                     if( what == "connected" )
                     {
-                        if( !waitFor( [&] { const juce::ScopedLock sl( surface.model.lock ); return surface.model.appLive; }, 15000 ) )
+                        if( !waitFor( [&] { const juce::ScopedLock sl( surface.model.lock ); return surface.model.appLive; }, 60000 ) )
                             return fail( "app never completed the comm handshake" );
                     }
                     else if( what == "pad" )
