@@ -57,7 +57,8 @@ juce::File getAppDirs( DirType T )
     else if( T == MTPrefs )
         return juce::File( rootP + juce::String( MT_SOURCE_SRCDIR ) + seprator + "prefs" + seprator );
 #endif
-#elif defined( __APPLE_CPP__ ) || defined( __APPLE_CC__ ) || defined( JUCE_MAC )
+// The emulator on Linux uses the same layout as on macOS: assets next to the binary, state in the device root.
+#elif defined( __APPLE_CPP__ ) || defined( __APPLE_CC__ ) || defined( JUCE_MAC ) || ( KICK_EMU && ( defined( LINUX ) || defined( __linux__ ) ) )
     if( T == MTAssets )
         return juce::File( "./assets" );
     else if( T == MTSamples )

@@ -17,7 +17,7 @@ if [[ "$(uname)" == Darwin ]]; then
     KICK_BIN="$REPO/$OUT/emu/Kick.app/Contents/MacOS/Kick"
     SURFACE_REL="KICK Surface.app/Contents/MacOS/KICK Surface"
 else
-    KICK_BIN="$REPO/$OUT/emu/Kick"
+    KICK_BIN="$(find "$REPO/$OUT/emu/apps/kick" -type f -name Kick -perm -u+x 2>/dev/null | head -1)"
     SURFACE_REL="KICK Surface"
 fi
 # Single-config builds put the app under KickSurface_artefacts/<Config>/, older configures at the top.

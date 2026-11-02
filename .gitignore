@@ -2,3 +2,4 @@
 # Emulator build output and fetched dependencies
 /build/
 /.3rdPartySourceCache/
+build-linux/
