@@ -348,6 +348,14 @@ namespace kick_emu
             auto img = w->createComponentSnapshot( w->getLocalBounds(), true, 1.0f );
             if( !img.isValid() )
                 return;
+            if( img.getFormat() != juce::Image::ARGB )
+            {
+                // An opaque snapshot can come back as 3 bytes per pixel (Linux, Windows); the wire format is 4.
+                juce::Image argb( juce::Image::ARGB, img.getWidth(), img.getHeight(), false );
+                juce::Graphics g( argb );
+                g.drawImageAt( img, 0, 0 );
+                img = argb;
+            }
 
             // 64-bit FNV-style hash over the pixel rows: cheap compared to the snapshot itself.
             juce::Image::BitmapData bits( img, juce::Image::BitmapData::readOnly );
