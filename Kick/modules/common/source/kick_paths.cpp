@@ -33,18 +33,30 @@ juce::File getAppDirs( DirType T )
     auto rootP = juce::File::getSpecialLocation( juce::File::currentApplicationFile ).getParentDirectory().getFullPathName() + seprator;
     if( T == MTAssets )
         return juce::File( rootP + juce::String( MT_SOURCE_SRCDIR ) + seprator + "assets" );
-    else if( T == MTSamples )
-        return juce::File( rootP + juce::String( MT_SOURCE_SRCDIR ) + seprator + "samples" );
     else if( T == MTDemos )
         return juce::File( rootP + juce::String( MT_SOURCE_SRCDIR ) + seprator + "demos" );
     else if( T == MTTemp )
         return juce::File( rootP + juce::String( MT_SOURCE_SRCDIR ) + seprator + "templates" );
+#if KICK_EMU
+    // Writable state lives in the emulated device root, like /home/Kick on the unit.
+    else if( T == MTSamples )
+        return juce::File( kick_emu::devicePath( "/data/sounds" ) );
+    else if( T == MTProjects )
+        return juce::File( kick_emu::devicePath( "/home/Kick/projects/" ) );
+    else if( T == MTLog )
+        return juce::File( kick_emu::devicePath( "/home/Kick/logs/" ) );
+    else if( T == MTPrefs )
+        return juce::File( kick_emu::devicePath( "/home/Kick/prefs" ) );
+#else
+    else if( T == MTSamples )
+        return juce::File( rootP + juce::String( MT_SOURCE_SRCDIR ) + seprator + "samples" );
     else if( T == MTProjects )
         return juce::File( rootP + juce::String( MT_SOURCE_SRCDIR ) + seprator + "projects" );
     else if( T == MTLog )
         return juce::File( rootP + juce::String( MT_SOURCE_SRCDIR ) + seprator + "logs" + seprator );
     else if( T == MTPrefs )
         return juce::File( rootP + juce::String( MT_SOURCE_SRCDIR ) + seprator + "prefs" + seprator );
+#endif
 #elif defined( __APPLE_CPP__ ) || defined( __APPLE_CC__ ) || defined( JUCE_MAC )
     if( T == MTAssets )
         return juce::File( "./assets" );

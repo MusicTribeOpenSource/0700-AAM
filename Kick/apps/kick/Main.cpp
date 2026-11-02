@@ -170,7 +170,8 @@ public:
         //bounds = display.logicalToPhysical( ui::layout::screen, nullptr );
         w->setBounds( bounds );
 
-#if( JUCE_IOS || JUCE_ANDROID || JUCE_LINUX || __linux__ )
+#if( JUCE_IOS || JUCE_ANDROID || JUCE_LINUX || __linux__ ) && !KICK_EMU
+        // The device runs the window as a kiosk. The emulator keeps a normal window.
         juce::Desktop::getInstance().setKioskModeComponent( w.get(), false );
 #endif
         // Position ...

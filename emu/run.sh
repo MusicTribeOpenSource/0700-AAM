@@ -12,10 +12,17 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KICK_BIN="$REPO/build/emu/Kick.app/Contents/MacOS/Kick"
+OUT="${EMU_BUILD_DIR:-build}"
+if [[ "$(uname)" == Darwin ]]; then
+    KICK_BIN="$REPO/$OUT/emu/Kick.app/Contents/MacOS/Kick"
+    SURFACE_REL="KICK Surface.app/Contents/MacOS/KICK Surface"
+else
+    KICK_BIN="$REPO/$OUT/emu/Kick"
+    SURFACE_REL="KICK Surface"
+fi
 # Single-config builds put the app under KickSurface_artefacts/<Config>/, older configures at the top.
 SURFACE_BIN=""
-for candidate in "$REPO"/build/surface/KickSurface_artefacts/{Release,Debug,.}/"KICK Surface.app/Contents/MacOS/KICK Surface"; do
+for candidate in "$REPO"/$OUT/surface/KickSurface_artefacts/{Release,Debug,.}/"$SURFACE_REL"; do
     [[ -x "$candidate" ]] && { SURFACE_BIN="$candidate"; break; }
 done
 
@@ -74,7 +81,7 @@ if [[ "$USE_SURFACE" == 1 ]]; then
 fi
 
 # Kick resolves ./assets, ./demos and ./templates against its working directory.
-cd "$REPO/build/emu"
+cd "$REPO/$OUT/emu"
 "$KICK_BIN" >"$KICK_EMU_ROOT/kick.log" 2>&1 &
 KICK_PID=$!
 PIDS+=("$KICK_PID")
