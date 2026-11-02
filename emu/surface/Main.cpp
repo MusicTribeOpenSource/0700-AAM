@@ -1642,7 +1642,12 @@ namespace
             startThread();
         }
 
-        ~ScriptRunner() override { stopThread( 2000 ); }
+        ~ScriptRunner() override
+        {
+            *alive = false; // queued callbacks check this on the message thread and become no-ops
+            signalThreadShouldExit();
+            stopThread( 2000 );
+        }
 
     private:
         /// Runs fn on the message thread and waits. The callback owns its state through a shared
@@ -1656,12 +1661,19 @@ namespace
             };
             auto job = std::make_shared<Job>();
             job->fn  = std::move( fn );
-            juce::MessageManager::callAsync( [job] {
-                job->fn();
+            juce::MessageManager::callAsync( [job, alive = alive] {
+                if( *alive )
+                    job->fn();
                 job->done.signal();
             } );
-            if( !job->done.wait( 10000 ) )
-                timedOut = true;
+            for( int t = 0; t < 10000; t += 50 )
+            {
+                if( job->done.wait( 50 ) )
+                    return;
+                if( threadShouldExit() )
+                    return;
+            }
+            timedOut = true;
         }
 
         bool waitFor( std::function<bool()> cond, int timeoutMs )
@@ -1822,6 +1834,7 @@ namespace
         Surface&          surface;
         juce::StringArray lines;
         std::atomic<bool> timedOut{ false };
+        std::shared_ptr<std::atomic<bool>> alive = std::make_shared<std::atomic<bool>>( true );
     };
 
     //==============================================================================

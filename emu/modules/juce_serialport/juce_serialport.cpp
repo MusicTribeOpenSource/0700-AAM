@@ -247,8 +247,17 @@ bool SerialPort::setConfig( const SerialPortConfig& config )
 
     // A pseudo-terminal ignores the speed, and tcsetattr can fail on some pty
     // flavours. That is not fatal for the emulator, so only log it.
-    if( tcsetattr( fd, TCSANOW, &tio ) != 0 && debugFn )
-        debugFn( "SerialPort: tcsetattr failed " + portPath, juce::String( std::strerror( errno ) ) );
+    if( tcsetattr( fd, TCSANOW, &tio ) != 0 )
+    {
+        if( debugFn )
+            debugFn( "SerialPort: tcsetattr failed " + portPath, juce::String( std::strerror( errno ) ) );
+        // A real UART with unknown line settings corrupts packets, so that is a failure. Only
+        // pseudo-terminals (the emulator's link) may carry on.
+        const bool isPty = portPath.contains( "/pts/" ) || portPath.contains( "/ttys" )
+                           || juce::File( portPath ).isSymbolicLink();
+        if( !isPty )
+            return false;
+    }
     return true;
 #endif
 }
@@ -309,6 +318,27 @@ int SerialPortInputStream::read( void* destBuffer, int maxBytesToRead )
     return (int)n;
 }
 
+namespace
+{
+    /// True when buf is a run of complete frames, or starts with something that is not a frame
+    /// (so Kick can discard it). False while the last frame is still arriving.
+    bool holdsWholeFrames( const unsigned char* buf, size_t n )
+    {
+        size_t i = 0;
+        while( i < n )
+        {
+            if( n - i < 6 )
+                return buf[i] != 'M';
+            if( buf[i] != 'M' || buf[i + 1] != 'T' )
+                return true;
+            i += (size_t)buf[i + 5] + 7;
+            if( i > n )
+                return false;
+        }
+        return true;
+    }
+}
+
 void SerialPortInputStream::run()
 {
     char chunk[512];
@@ -353,7 +383,11 @@ void SerialPortInputStream::run()
             std::memcpy( static_cast<char*>( buffer.getData() ) + used, chunk, (size_t)got );
             used += (size_t)got;
 
-            if( notifyType == NOTIFY_ALWAYS )
+            if( port->isTcp() )
+                // TCP splits frames anywhere and Kick drops what it cannot parse, so only wake
+                // it once the buffer holds whole PktMgr frames ('M' 'T' type dir cmd size data crc '\n').
+                notify = holdsWholeFrames( static_cast<const unsigned char*>( buffer.getData() ), used );
+            else if( notifyType == NOTIFY_ALWAYS )
                 notify = true;
             else if( notifyType == NOTIFY_ON_CHAR )
                 notify = std::memchr( chunk, notifyChar, (size_t)got ) != nullptr;
