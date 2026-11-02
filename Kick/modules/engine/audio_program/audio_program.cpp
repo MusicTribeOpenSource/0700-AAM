@@ -42,7 +42,10 @@
 #include "synth/clipProgram.cpp"
 #include "synth/DrumProgram.cpp"
 #include "synth/KeygroupProgram.cpp"
-
+#include "synth/drumsynth/Analog83Kick.cpp"
+#include "synth/drumsynth/Analog83HiHat.cpp"
+#include "synth/drumsynth/Analog83Record.cpp"
+#include "synth/drumsynth/Analog83Kit.cpp"
 #include "source/mt_audio_iprogram.cpp"
 #include "source/mt_audio_common_program.cpp"
 

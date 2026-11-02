@@ -56,7 +56,7 @@
     #include "synth/clipProgram.h"
     #include "synth/drumProgram.h"
     #include "synth/keygroupProgram.h"
-
+    #include "synth/drumsynth/Analog83Kit.h"
     #include "source/mt_audio_common_program.h"
     #include "source/mt_audio_drum_program.h"
     #include "source/mt_audio_clip_program.h"
