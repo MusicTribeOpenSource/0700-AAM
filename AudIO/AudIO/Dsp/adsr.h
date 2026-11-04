@@ -161,12 +161,17 @@ namespace AudIO
                 case State::HOLD:
                 case State::DECAY:
                 case State::RELEASE:
+                {
+                    // Step with this stage's multiplier first, then hand over: the last step of a stage used to be taken with the NEXT
+                    // stage's multiplier, so a short attack ended one step (a factor of ten for a 4 sample attack) short of full level.
+                    currentLevel_ *= multiplier_;
+                    const double out = currentLevel_;
                     if( ++numCurrentSamples >= numSamplesToNextStage )
                     {
                         enterStage( (State)( currentStage_ + 1 ) );
                     }
-                    currentLevel_ *= multiplier_;
-                    return currentLevel_;
+                    return out;
+                }
             }
         }
 
@@ -192,7 +197,10 @@ namespace AudIO
                 if( Type::LINEAR == type )
                     coeff += ( ( endLevel - startLevel ) / (double)( lengthInSamples ) );
                 else // if( Mode::EXPONENTIAL == type_ )
-                    coeff += ( ( std::log( endLevel ) - std::log( startLevel ) ) / (double)( lengthInSamples + 1 ) );
+                    // Exact per-sample ratio: after lengthInSamples steps the level is endLevel. (The linear approximation
+                    // 1 + ln(end/start) / (N + 1) it replaces ends far short of the target on short stages: a 4 sample attack from -80 dB
+                    // reached -44 dB, so an enabled envelope with a zero Attack was almost silent.)
+                    coeff = std::exp( ( std::log( endLevel ) - std::log( startLevel ) ) / (double)lengthInSamples );
             }
             return coeff;
         }
