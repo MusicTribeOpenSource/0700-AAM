@@ -195,6 +195,11 @@ namespace ui
         settings.projects.removeProject( reversedRow );
     }
 
+    void RecentProject::paint( juce::Graphics& g )
+    {
+        g.fillAll( ui::Theme::backgroundColour( 4 ) );
+    }
+
     void RecentProject::resized()
     {
         auto b = getLocalBounds();

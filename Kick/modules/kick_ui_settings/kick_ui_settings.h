@@ -73,6 +73,7 @@ namespace kick_ui
         bool requiresHandleCommand() override { return true; }
 
         void handleCommand( CPktMgr::HWMsg_t& ) override;
+        void paint( juce::Graphics& g ) override;
 
     private:
         kick_ui::KickModeHeader header{ "Preferences", "Icon_SettingsScreen" };

@@ -150,6 +150,7 @@ namespace kick_ui
         HeaderBarProgramAndTrackSelector padHeaderComp;
         PadMixerContent                  padContent;
 
+        void paint( juce::Graphics& g ) override;
         void resized() override;
         void visibilityChanged();
         void timerCallback() override;

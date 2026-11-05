@@ -113,6 +113,7 @@ namespace kick_ui
         juce::Component*                                comp{ nullptr };
         ui::KickLabel                                   infoLabel{ "" };
 
+        void          paint( juce::Graphics& g ) override;
         void          resized() override;
         void          visibilityChanged() override;
         ui::KickLabel selectedPadLabel{ "" };

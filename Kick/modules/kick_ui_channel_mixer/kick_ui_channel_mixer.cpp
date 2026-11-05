@@ -112,6 +112,11 @@ namespace kick_ui
         index = Index;
     }
 
+    void ChannelMixer::paint( juce::Graphics& g )
+    {
+        g.fillAll( ui::Theme::backgroundColour( 4 ) );
+    }
+
     void ChannelMixer::resized()
     {
         auto b = getLocalBounds();

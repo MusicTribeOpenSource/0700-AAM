@@ -128,7 +128,8 @@ namespace ui
         void       knobClicked() override;
         void       knobRotated( double ) override;
         void       sliderMoved( float ) override;
-        void       resized();
+        void       paint( juce::Graphics& g ) override;
+        void       resized() override;
         void       removeFileFromVTree( int );
         void       createProject( juce::String value );
         int        getReversedRow( int );

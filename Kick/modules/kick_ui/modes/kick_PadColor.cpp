@@ -333,6 +333,11 @@ namespace kick_ui
         }
     }
 
+    void KickPadColorMode::paint( juce::Graphics& g )
+    {
+        g.fillAll( ui::Theme::backgroundColour( 4 ) );
+    }
+
     void KickPadColorMode::resized()
     {
         header.setBounds( getLocalBounds().removeFromTop( ui::layout::header.getHeight() ) );
