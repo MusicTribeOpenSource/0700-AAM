@@ -277,7 +277,8 @@ namespace mt
             // Setup Title and close button
             auto bTitle  = b.removeFromTop( ( ui::layout::screen == dialogArea ) ? 76 : 40 );
             auto cBounds = bTitle.removeFromRight( 16 + closeButtonSize );
-            closeBounds  = cBounds.withSizeKeepingCentre( closeButtonSize, closeButtonSize );
+            // The whole end of the title bar is the touch target for reliable finger actuation on touchscreens.
+            closeBounds  = cBounds;
             closeButton.setBounds( closeBounds );
             title.setBounds( bTitle );
 
