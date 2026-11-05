@@ -21,6 +21,9 @@
 
 #pragma once
 
+#include "../../../common/source/kick_paths.h"
+#include <cmath>
+
 namespace mt
 {
     /// <summary>
@@ -96,6 +99,57 @@ namespace mt
         return nullptr;
     }
 
+    static bool generateFallbackMetronomeWav( const juce::File& file, int styleIndex )
+    {
+        file.getParentDirectory().createDirectory();
+
+        constexpr double sampleRate = 44100.0;
+        constexpr double durationSeconds = 0.04; // 40 ms
+        const int numSamples = static_cast<int>( sampleRate * durationSeconds );
+
+        juce::AudioBuffer<float> buffer( 2, numSamples );
+        buffer.clear();
+
+        double baseFreq = 1600.0;
+        double decayFactor = 120.0;
+
+        switch( styleIndex )
+        {
+            case 1: baseFreq = 2400.0; decayFactor = 140.0; break; // Glass
+            case 2: baseFreq = 1200.0; decayFactor = 90.0;  break; // Clap
+            case 3: baseFreq = 3000.0; decayFactor = 160.0; break; // Metal
+            case 4: baseFreq = 850.0;  decayFactor = 80.0;  break; // Wood pop
+            case 5: baseFreq = 2000.0; decayFactor = 150.0; break; // Quartz
+            case 6: baseFreq = 1400.0; decayFactor = 120.0; break; // Stick
+            case 7: baseFreq = 1760.0; decayFactor = 70.0;  break; // Bell
+            default: baseFreq = 1600.0; decayFactor = 120.0; break; // Standard
+        }
+
+        for( int i = 0; i < numSamples; ++i )
+        {
+            double t = static_cast<double>( i ) / sampleRate;
+            double env = std::exp( -decayFactor * t );
+            double sample = env * ( 0.85 * std::sin( 2.0 * juce::MathConstants<double>::pi * baseFreq * t )
+                                  + 0.15 * std::sin( 4.0 * juce::MathConstants<double>::pi * baseFreq * t ) );
+            buffer.setSample( 0, i, static_cast<float>( sample ) );
+            buffer.setSample( 1, i, static_cast<float>( sample ) );
+        }
+
+        juce::WavAudioFormat wavFormat;
+        file.deleteFile();
+        std::unique_ptr<juce::FileOutputStream> outputStream( file.createOutputStream() );
+        if( !outputStream ) return false;
+
+        std::unique_ptr<juce::AudioFormatWriter> writer( wavFormat.createWriterFor( outputStream.get(), sampleRate, 2, 16, {}, 0 ) );
+        if( writer )
+        {
+            outputStream.release();
+            writer->writeFromAudioSampleBuffer( buffer, 0, numSamples );
+            return true;
+        }
+        return false;
+    }
+
     ASound::Ptr ASoundCache::getOrLoadMetronomeSound( const juce::String& File )
     {
         for( auto it : metronomeSounds )
@@ -104,11 +158,36 @@ namespace mt
                 return it;
         }
 
-        if( File.isNotEmpty() && juce::File( File ).existsAsFile() )
+        if( File.isNotEmpty() )
         {
-            if( auto ptr = new ASound( File, fmtMgr, ASOUND_UPSAMPLE_RATIO ) )
+            juce::File targetFile( File );
+            if( !targetFile.existsAsFile() )
             {
-                return metronomeSounds.add( ptr );
+                int styleIdx = 0;
+                auto fn = targetFile.getFileName();
+                if( fn.containsIgnoreCase( "Glass" ) ) styleIdx = 1;
+                else if( fn.containsIgnoreCase( "Clap" ) ) styleIdx = 2;
+                else if( fn.containsIgnoreCase( "Metal" ) ) styleIdx = 3;
+                else if( fn.containsIgnoreCase( "MouthPop" ) ) styleIdx = 4;
+                else if( fn.containsIgnoreCase( "Quartz" ) ) styleIdx = 5;
+                else if( fn.containsIgnoreCase( "Stick" ) ) styleIdx = 6;
+                else if( fn.containsIgnoreCase( "Bell" ) ) styleIdx = 7;
+
+                if( !generateFallbackMetronomeWav( targetFile, styleIdx ) )
+                {
+                    auto fallback = getAppDirs( MTTemp ).getChildFile( "metronome" ).getChildFile( fn );
+                    fallback.getParentDirectory().createDirectory();
+                    if( generateFallbackMetronomeWav( fallback, styleIdx ) )
+                        targetFile = fallback;
+                }
+            }
+
+            if( targetFile.existsAsFile() )
+            {
+                if( auto ptr = new ASound( targetFile.getFullPathName(), fmtMgr, ASOUND_UPSAMPLE_RATIO ) )
+                {
+                    return metronomeSounds.add( ptr );
+                }
             }
         }
         return nullptr;

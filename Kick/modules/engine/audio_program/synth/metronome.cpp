@@ -50,7 +50,7 @@ namespace mt
 
     void Metronome::setSource( juce::String& File )
     {
-        auto path  = getAppDirs( MTAssets ).getChildFile( File );
+        auto path  = juce::File::isAbsolutePath( File ) ? juce::File( File ) : getAppDirs( MTAssets ).getChildFile( File );
         auto sound = getAudioSoundCache().getOrLoadMetronomeSound( path.getFullPathName() );
         slice.setSource( sound );
     }
@@ -61,6 +61,12 @@ namespace mt
         if( auto voice = getFreeVoice( Note, 1 ) )
         {
             voice->setSlice( &slice );
+            if( auto avoice = dynamic_cast<AVoice*>( voice ) )
+            {
+                // Note 0 = Bar downbeat accent (pitched higher)
+                // Note 1 = Regular beat
+                avoice->setPitchRatio( Note == 0 ? 1.5 : 1.0 );
+            }
             voice->noteOn( Note, Velocity );
             addVoiceForPlayback( voice );
         }
