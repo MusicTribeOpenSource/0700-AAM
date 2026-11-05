@@ -51,6 +51,7 @@ namespace kick_ui
         void                 handleCommand( CPktMgr::HWMsg_t& );
         void                 knobCommand( int knob, int value );
         void                 resized() override;
+        void                 paint( juce::Graphics& g ) override;
         void                 handleAsyncUpdate() override;
         inline void          setupLoadScreenVisibility();
         juce::Rectangle<int> getScreenBounds( IScreen* pScreen );

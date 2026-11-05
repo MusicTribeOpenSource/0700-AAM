@@ -134,6 +134,7 @@ namespace kick_ui
     KickHome::KickHome()
         : statusBar_( &AppStatusbar::Instance() )
     {
+        setOpaque( true );
         //mt::FocusDebugger::enableFocusDebugger( true );
 
         // Setup default look and feel.
@@ -315,6 +316,11 @@ namespace kick_ui
                 bounds.removeFromBottom( ui::layout::statusBar.getHeight() );
         }
         return bounds;
+    }
+
+    void KickHome::paint( juce::Graphics& g )
+    {
+        g.fillAll( ui::Theme::backgroundColour( 4 ) );
     }
 
     void KickHome::resized()

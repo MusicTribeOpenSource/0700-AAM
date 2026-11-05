@@ -272,6 +272,11 @@ namespace kick_ui
         }
     }
 
+    void ProgramEdit::paint( juce::Graphics& g )
+    {
+        g.fillAll( ui::Theme::backgroundColour( 4 ) );
+    }
+
     void ProgramEdit::resized()
     {
         auto b = getLocalBounds();

@@ -130,6 +130,7 @@ namespace kick_ui
         int getSeqNo( void ) const noexcept { return seq; };
 
     private:
+        void paint( juce::Graphics& g ) override;
         void resized() override;
         void mouseDrag( const juce::MouseEvent& event ) override;
         void mouseUp( const juce::MouseEvent& event ) override;

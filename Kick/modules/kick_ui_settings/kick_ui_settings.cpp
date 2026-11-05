@@ -158,6 +158,11 @@ namespace kick_ui
             pView->handleCommand( hwMsg );
     }
 
+    void Settings::paint( juce::Graphics& g )
+    {
+        g.fillAll( ui::Theme::backgroundColour( 4 ) );
+    }
+
     void Settings::resized()
     {
         auto b = getLocalBounds();

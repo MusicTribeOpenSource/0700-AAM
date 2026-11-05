@@ -80,6 +80,7 @@ namespace kick_ui
         int                                    index{ -1 };
 
         void showView( int Index );
+        void paint( juce::Graphics& g ) override;
         void resized() override;
         void visibilityChanged() override;
         void timerCallback() override;

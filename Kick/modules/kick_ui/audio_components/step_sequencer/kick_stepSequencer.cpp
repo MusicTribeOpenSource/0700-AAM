@@ -744,6 +744,11 @@ namespace kick_ui
     }
     int StepSequencer::lastPressedPad = -1;
 
+    void StepSequencer::paint( juce::Graphics& g )
+    {
+        g.fillAll( ui::Theme::backgroundColour( 4 ) );
+    }
+
     void StepSequencer::resized()
     {
         header.setBoundsRelative( .0f, .0f, 1.0f, .1423f );

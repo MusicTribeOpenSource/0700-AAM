@@ -51,6 +51,7 @@ namespace kick_ui
         bool                            isvisible{ false };
 
     private:
+        void paint( juce::Graphics& g ) override;
         void resized() override;
         void visibilityChanged() override;
         void setVisibility();

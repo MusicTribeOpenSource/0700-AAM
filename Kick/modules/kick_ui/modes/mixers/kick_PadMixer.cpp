@@ -197,6 +197,11 @@ namespace kick_ui
         padEnabler.setToggleState( true, juce::sendNotification );
     }
 
+    void PadMixer::paint( juce::Graphics& g )
+    {
+        g.fillAll( ui::Theme::backgroundColour( 4 ) );
+    }
+
     void PadMixer::resized()
     {
         auto b = getLocalBounds();

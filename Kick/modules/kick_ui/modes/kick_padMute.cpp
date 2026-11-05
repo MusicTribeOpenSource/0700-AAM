@@ -81,6 +81,11 @@ namespace kick_ui
         } );
     }
 
+    void KickPadMute::paint( juce::Graphics& g )
+    {
+        g.fillAll( ui::Theme::backgroundColour( 4 ) );
+    }
+
     void KickPadMute::resized()
     {
         auto b = getLocalBounds();
