@@ -1,5 +1,8 @@
 #pragma once
 #include <kick_ui/modes/filebrowser/kick_fileUtils.h>
+#if KICK_EMU
+    #include "kick_emu_hal.h"
+#endif
 namespace ui
 {
     namespace fileUtils
@@ -8,15 +11,24 @@ namespace ui
 
         juce::String getSdCardMountedPath()
         {
+#if KICK_EMU
+            return kick_emu::devicePath( "/mnt/sdcard" );
+#endif
             return "/mnt//sdcard";
         }
         juce::String getUsbMountedPath()
         {
+#if KICK_EMU
+            return kick_emu::devicePath( "/mnt/flash" );
+#endif
             return "/mnt//flash";
         }
 
         bool getSdCardStatus()
         {
+#if KICK_EMU
+            return kick_emu::deviceExists( "/dev/mmcblk1" );
+#endif
 #if defined( LINUX ) || defined( __linux__ )
             const char* sdCardDevicePath = "/dev/mmcblk1";
             if( access( sdCardDevicePath, F_OK ) != -1 )
@@ -29,6 +41,9 @@ namespace ui
 
         bool getUsbStatus()
         {
+#if KICK_EMU
+            return kick_emu::deviceExists( "/dev/sda" );
+#endif
 #if defined( LINUX ) || defined( __linux__ )
             const char* usbDevicePath = "/dev/sda";
             if( access( usbDevicePath, F_OK ) != -1 )

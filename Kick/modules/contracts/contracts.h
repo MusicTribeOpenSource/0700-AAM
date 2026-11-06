@@ -42,5 +42,9 @@
 #include "logger/logger.h"
 #include "main/system_ipc_helpers.h"
 #include "main/system_signals.h"
+#include "gesture/gesture_event.h"
+#include "gesture/gesture_ipc_keys.h"
+#include "gesture/gesture_ipc_message_types.h"
+#include "gesture/gesture_signals.h"
 
 #endif

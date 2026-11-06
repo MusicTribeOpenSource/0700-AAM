@@ -1,0 +1,58 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Input events from the control surface firmware, checked against the unmodified Kick host.
+#
+#   cmake -S Firmware/kick-mcu -B build/mcu -G Ninja && cmake --build build/mcu
+#   emu/run.sh --firmware --script emu/tests/firmware-input.script
+#
+# kick-mcu-sim plays the MCU. After the handshake it presses buttons, strikes pads, turns knobs
+# and touches the strip, and `expect host` waits for Kick's log to show the host decoding each one.
+# Kick logs " Data[0] : <first payload byte> Cmd : <cmd> type : <packet type>" for every frame it
+# decodes, so a line proves the frame arrived intact and the host's PktMgr accepted its CRC; the
+# payload bytes after the first are checked by the firmware's own tests (Firmware/kick-mcu/tests).
+#
+# Counts are minimums: Kick also logs its own heartbeat traffic, and the app reacts to some of these.
+expect streaming
+wait 3000
+mark-host
+
+# Buttons: SHIFT (31) and two banks, each a press and a release.
+press Shift 60
+wait 60
+press Bank C 60
+wait 60
+press 54 60
+wait 60
+expect host "Data[0] : 31 Cmd : 0 type : 1" 2
+expect host "Data[0] : 2 Cmd : 0 type : 1" 2
+expect host "Data[0] : 54 Cmd : 0 type : 1" 2
+
+# Pads, 1-based in the script: pad 1 is wire pad 0, pad 16 is wire pad 15. Down and up each.
+pad 1 100 60
+wait 60
+pad 16 20 60
+wait 60
+expect host "Data[0] : 0 Cmd : 0 type : 3" 2
+expect host "Data[0] : 15 Cmd : 0 type : 3" 2
+
+# Aftertouch on: the same pad now also sends pressure frames while it is held, so three or more.
+aftertouch on
+pad 6 90 150 50
+wait 100
+expect host "Data[0] : 5 Cmd : 0 type : 3" 3
+aftertouch off
+
+# Q-Link knob 3 (cmd 1), two clicks; the jog wheel (cmd 0), one click back.
+turn 3 2
+wait 50
+turn 0 -1
+wait 50
+expect host "Data[0] : 3 Cmd : 1 type : 4" 2
+expect host "Data[0] : 0 Cmd : 0 type : 4" 1
+
+# Touch strip: a position, then the lift (value 0).
+strip 40 100
+wait 100
+expect host "Data[0] : 40 Cmd : 0 type : 7" 1
+expect host "Data[0] : 0 Cmd : 0 type : 7" 1
+
+quit 0

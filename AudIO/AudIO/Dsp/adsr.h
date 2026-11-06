@@ -165,7 +165,11 @@ namespace AudIO
                     {
                         enterStage( (State)( currentStage_ + 1 ) );
                     }
-                    currentLevel_ *= multiplier_;
+                    // LINEAR adds a fixed step per sample; EXPONENTIAL scales by a fixed ratio.
+                    if( Type::LINEAR == type_ )
+                        currentLevel_ += multiplier_;
+                    else
+                        currentLevel_ *= multiplier_;
                     return currentLevel_;
             }
         }
@@ -186,11 +190,13 @@ namespace AudIO
 
         inline double calculateCoefficient( double startLevel, double endLevel, unsigned long lengthInSamples, Type type )
         {
-            double coeff = 1.0;
+            // LINEAR returns the per-sample increment (0 for no change); EXPONENTIAL returns
+            // the per-sample multiplier (1 for no change).
+            double coeff = ( Type::LINEAR == type ) ? 0.0 : 1.0;
             if( 0 != lengthInSamples )
             {
                 if( Type::LINEAR == type )
-                    coeff += ( ( endLevel - startLevel ) / (double)( lengthInSamples ) );
+                    coeff = ( endLevel - startLevel ) / (double)( lengthInSamples );
                 else // if( Mode::EXPONENTIAL == type_ )
                     coeff += ( ( std::log( endLevel ) - std::log( startLevel ) ) / (double)( lengthInSamples + 1 ) );
             }
@@ -258,7 +264,7 @@ namespace AudIO
         static constexpr double        minimumLevel_ = 0.0001;
         std::array<double, State::MAX> stageTime_{ 0.0, 0.01, 0.0, 0.5, 0.1, 1.0 };
         double                         currentLevel_{ minimumLevel_ };
-        double                         multiplier_{ 1.0 };
+        double                         multiplier_{ 1.0 }; // per-sample increment (LINEAR) or ratio (EXPONENTIAL)
         unsigned long                  numCurrentSamples{ 0 };
         unsigned long                  numSamplesToNextStage{ 0 };
     };

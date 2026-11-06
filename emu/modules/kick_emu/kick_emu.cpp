@@ -1,0 +1,575 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+#include "kick_emu.h"
+#include "kick_emu_input.h"
+
+#include <map>
+#include <mutex>
+#include <utility>
+
+namespace kick_emu
+{
+    namespace
+    {
+        juce::String env( const char* name, const juce::String& fallback )
+        {
+            auto v = juce::SystemStats::getEnvironmentVariable( name, {} );
+            return v.isNotEmpty() ? v : fallback;
+        }
+
+        const juce::File& rootDir()
+        {
+            static const juce::File dir = [] {
+                auto r = env( "KICK_EMU_ROOT", juce::File::getSpecialLocation( juce::File::userHomeDirectory ).getChildFile( "KickEmu" ).getFullPathName() );
+                juce::File f( juce::File::isAbsolutePath( r ) ? r : juce::File::getCurrentWorkingDirectory().getChildFile( r ).getFullPathName() );
+                f.createDirectory();
+                return f;
+            }();
+            return dir;
+        }
+
+        void log( const juce::String& s )
+        {
+            juce::Logger::writeToLog( "[emu] " + s );
+        }
+
+        //==============================================================================
+        /// UDP event bus to the Surface.
+        struct EventBus
+        {
+            EventBus()
+                : socket( false )
+                , port( env( "KICK_EMU_EVENT_PORT", "50902" ).getIntValue() )
+            {
+                socket.bindToPort( 0, "127.0.0.1" );
+            }
+
+            void send( const juce::String& line )
+            {
+                const auto msg = line.trimEnd() + "\n";
+                std::lock_guard<std::mutex> g( lock );
+                socket.write( "127.0.0.1", port, msg.toRawUTF8(), (int)msg.getNumBytesAsUTF8() );
+            }
+
+            juce::DatagramSocket socket;
+            int                  port;
+            std::mutex           lock;
+        };
+
+        EventBus& events()
+        {
+            static EventBus bus;
+            return bus;
+        }
+
+        //==============================================================================
+        /// 8-channel 12-bit DAC at I2C address 0x0C, as driven by mt::CV
+        /// (Kick/modules/hardware/source/kick_I2c.cpp):
+        ///   write [0x3n, hi, lo]  -> channel n = 12-bit value, left-justified in hi:lo
+        ///   write [0x9n, 0, 0]    -> select channel n for read-back
+        ///   read 2 bytes          -> selected channel, left-justified
+        ///   read 16 bytes         -> all eight channels, left-justified
+        /// Full scale (4095) is 5 V.
+        struct VirtualDac
+        {
+            static constexpr int kAddress = 0x0C;
+
+            bool write( const uint8_t* d, int len )
+            {
+                if( len < 1 )
+                    return false;
+                const int cmd = d[0] & 0xF0;
+                const int ch  = d[0] & 0x0F;
+                std::lock_guard<std::mutex> g( lock );
+                if( cmd == 0x30 && ch < 8 && len >= 3 )
+                {
+                    regs[ch] = (uint16_t)( ( ( d[1] << 8 ) | d[2] ) >> 4 );
+                    events().send( "cv " + juce::String( ch ) + " " + juce::String( regs[ch] ) + " " + juce::String( regs[ch] * 5.0f / 4095.0f, 3 ) );
+                    return true;
+                }
+                if( cmd == 0x90 && ch < 8 )
+                {
+                    readSel = ch;
+                    return true;
+                }
+                return true; // Unknown commands are accepted, like a real bus write.
+            }
+
+            bool read( uint8_t* d, int len )
+            {
+                std::lock_guard<std::mutex> g( lock );
+                if( len == 2 )
+                {
+                    const uint16_t v = (uint16_t)( regs[readSel] << 4 );
+                    d[0]             = (uint8_t)( v >> 8 );
+                    d[1]             = (uint8_t)( v & 0xFF );
+                    return true;
+                }
+                for( int i = 0; i + 1 < len && i / 2 < 8; i += 2 )
+                {
+                    const uint16_t v = (uint16_t)( regs[i / 2] << 4 );
+                    d[i]             = (uint8_t)( v >> 8 );
+                    d[i + 1]         = (uint8_t)( v & 0xFF );
+                }
+                return true;
+            }
+
+            uint16_t   regs[8]{};
+            int        readSel{ 0 };
+            std::mutex lock;
+        };
+
+        VirtualDac& dac()
+        {
+            static VirtualDac d;
+            return d;
+        }
+    }
+
+    //==============================================================================
+    // HAL
+
+    const char* root()
+    {
+        static const std::string r = rootDir().getFullPathName().toStdString();
+        return r.c_str();
+    }
+
+    const char* devicePath( const char* linuxPath )
+    {
+        static std::mutex                                          lock;
+        static std::map<std::string, std::unique_ptr<std::string>> cache;
+
+        std::lock_guard<std::mutex> g( lock );
+        auto&                       slot = cache[linuxPath != nullptr ? linuxPath : ""];
+        if( !slot )
+        {
+            std::string p = linuxPath != nullptr ? linuxPath : "";
+            // Collapse the "//" Kick uses in "/mnt//sdcard".
+            for( size_t i; ( i = p.find( "//" ) ) != std::string::npos; )
+                p.erase( i, 1 );
+            slot = std::make_unique<std::string>( std::string( root() ) + ( p.empty() || p[0] != '/' ? "/" : "" ) + p );
+        }
+        return slot->c_str();
+    }
+
+    bool deviceExists( const char* linuxPath )
+    {
+        return juce::File( devicePath( linuxPath ) ).exists();
+    }
+
+    bool isMounted( const char* id )
+    {
+        juce::StringArray lines;
+        juce::File( devicePath( "/proc/mounts" ) ).readLines( lines );
+        for( auto& l : lines )
+            if( l.contains( id ) )
+                return true;
+        return false;
+    }
+
+    int shell( const char* command )
+    {
+        const juce::String cmd( command != nullptr ? command : "" );
+        log( "shell (not run): " + cmd );
+
+        if( cmd.contains( "reboot" ) )
+            events().send( "power reboot" );
+        else if( cmd.contains( "poweroff" ) )
+            events().send( "power off" );
+        return 0;
+    }
+
+    bool i2cWrite( int bus, int address, const uint8_t* data, int length )
+    {
+        if( bus == 3 && address == VirtualDac::kAddress )
+            return dac().write( data, length );
+        log( "i2c write to unknown device " + juce::String( bus ) + ":" + juce::String::toHexString( address ) );
+        return false;
+    }
+
+    bool i2cRead( int bus, int address, uint8_t* data, int length )
+    {
+        if( bus == 3 && address == VirtualDac::kAddress )
+            return dac().read( data, length );
+        return false;
+    }
+
+    void notify( const char* line )
+    {
+        events().send( line );
+    }
+
+    //==============================================================================
+    // Control socket
+
+    //==============================================================================
+    /// Streams Kick's window to the Surface so it can draw the screen inside the device bezel.
+    /// Wire format per frame: "KFRM", width, height, stride (little-endian int32 each), then
+    /// height rows of stride bytes in JUCE's native ARGB memory order. Frames go out only when the
+    /// pixels change, and every time a client connects.
+    class FrameStreamer : private juce::Thread
+        , private juce::Timer
+    {
+    public:
+        explicit FrameStreamer( juce::Component* w )
+            : juce::Thread( "kick_emu frames" )
+            , window( w )
+        {
+            const int port = env( "KICK_EMU_FRAME_PORT", "50903" ).getIntValue();
+            const int fps  = juce::jlimit( 1, 60, env( "KICK_EMU_FRAME_FPS", "30" ).getIntValue() );
+            if( listener.createListener( port, "127.0.0.1" ) )
+            {
+                log( "frame stream on 127.0.0.1:" + juce::String( port ) );
+                startThread();
+                startTimerHz( fps );
+            }
+            else
+                log( "frame stream: could not listen on port " + juce::String( port ) );
+        }
+
+        ~FrameStreamer() override
+        {
+            stopTimer();
+            signalThreadShouldExit();
+            wake.signal();
+            listener.close();
+            stopThread( 2000 );
+        }
+
+    private:
+        void timerCallback() override
+        {
+            auto* w = window.getComponent();
+            if( w == nullptr || !connected.load() )
+                return;
+            auto img = w->createComponentSnapshot( w->getLocalBounds(), true, 1.0f );
+            if( !img.isValid() )
+                return;
+            if( img.getFormat() != juce::Image::ARGB )
+            {
+                // An opaque snapshot can come back as 3 bytes per pixel (Linux, Windows); the wire format is 4.
+                juce::Image argb( juce::Image::ARGB, img.getWidth(), img.getHeight(), false );
+                juce::Graphics g( argb );
+                g.drawImageAt( img, 0, 0 );
+                img = argb;
+            }
+
+            // 64-bit FNV-style hash over the pixel rows: cheap compared to the snapshot itself.
+            juce::Image::BitmapData bits( img, juce::Image::BitmapData::readOnly );
+            uint64_t                h = 1469598103934665603ull;
+            for( int y = 0; y < bits.height; ++y )
+            {
+                const auto* row = (const uint64_t*)bits.getLinePointer( y );
+                for( int x = 0; x < bits.width / 2; ++x )
+                    h = ( h ^ row[x] ) * 1099511628211ull;
+            }
+            const bool force = forceFrame.exchange( false );
+            if( !force && h == lastHash )
+                return;
+            lastHash = h;
+            {
+                const juce::ScopedLock sl( lock );
+                pending = img;
+            }
+            wake.signal();
+        }
+
+        void run() override
+        {
+            while( !threadShouldExit() )
+            {
+                std::unique_ptr<juce::StreamingSocket> c( listener.waitForNextConnection() );
+                if( c == nullptr )
+                    continue;
+                {
+                    const juce::ScopedLock sl( lock );
+                    pending = {};
+                }
+                forceFrame = true;
+                connected  = true;
+                while( !threadShouldExit() && c->isConnected() )
+                {
+                    if( !wake.wait( 200 ) )
+                        continue;
+                    juce::Image img;
+                    {
+                        const juce::ScopedLock sl( lock );
+                        img = pending;
+                    }
+                    if( !img.isValid() || !send( *c, img ) )
+                        break;
+                }
+                connected = false;
+            }
+        }
+
+        static bool send( juce::StreamingSocket& s, const juce::Image& img )
+        {
+            juce::Image::BitmapData bits( img, juce::Image::BitmapData::readOnly );
+            char                    header[16] = { 'K', 'F', 'R', 'M' };
+            const int w = bits.width, h = bits.height, stride = w * 4;
+            const int fields[3] = { w, h, stride };
+            for( int i = 0; i < 3; ++i )
+                for( int b = 0; b < 4; ++b )
+                    header[4 + i * 4 + b] = (char)( ( (unsigned)fields[i] >> ( 8 * b ) ) & 0xff );
+            if( s.write( header, 16 ) != 16 )
+                return false;
+            for( int y = 0; y < h; ++y )
+            {
+                const char* row = (const char*)bits.getLinePointer( y );
+                int         done = 0;
+                while( done < stride )
+                {
+                    const int n = s.write( row + done, stride - done );
+                    if( n <= 0 )
+                        return false;
+                    done += n;
+                }
+            }
+            return true;
+        }
+
+        juce::Component::SafePointer<juce::Component> window;
+        juce::StreamingSocket                         listener;
+        juce::CriticalSection                         lock;
+        juce::Image                                   pending;
+        juce::WaitableEvent                           wake;
+        std::atomic<bool>                             connected{ false }, forceFrame{ false };
+        uint64_t                                      lastHash{ 0 };
+    };
+
+    class Host::ControlServer : private juce::Thread
+    {
+    public:
+        ControlServer()
+            : juce::Thread( "kick_emu control" )
+        {
+            port = env( "KICK_EMU_CONTROL_PORT", "50901" ).getIntValue();
+            if( listener.createListener( port, "127.0.0.1" ) )
+            {
+                log( "control socket on 127.0.0.1:" + juce::String( port ) );
+                startThread();
+            }
+            else
+                log( "control socket: could not listen on port " + juce::String( port ) );
+        }
+
+        ~ControlServer() override
+        {
+            signalThreadShouldExit();
+            listener.close();
+            stopThread( 2000 );
+            clients.clear(); // each serve() polls threadShouldExit() every 200 ms
+        }
+
+    private:
+        /// One connection on its own thread. The Surface keeps a connection open for bezel touches, so serving
+        /// clients one at a time would lock scripts and other tools out for as long as the Surface runs.
+        struct Client : juce::Thread
+        {
+            Client( ControlServer& o, std::unique_ptr<juce::StreamingSocket> s )
+                : juce::Thread( "kick_emu control client" ), owner( o ), socket( std::move( s ) )
+            {
+            }
+
+            ~Client() override { stopThread( 2000 ); }
+
+            void run() override { owner.serve( *socket, *this ); }
+
+            ControlServer&                         owner;
+            std::unique_ptr<juce::StreamingSocket> socket;
+        };
+
+        void run() override
+        {
+            while( !threadShouldExit() )
+            {
+                std::unique_ptr<juce::StreamingSocket> c( listener.waitForNextConnection() );
+                if( c == nullptr )
+                    continue;
+
+                for( int i = clients.size(); --i >= 0; )
+                    if( !clients[i]->isThreadRunning() )
+                        clients.remove( i );
+
+                clients.add( new Client( *this, std::move( c ) ) )->startThread();
+            }
+        }
+
+        void serve( juce::StreamingSocket& s, juce::Thread& self )
+        {
+            juce::String pending;
+            char         buf[512];
+            while( !self.threadShouldExit() && s.isConnected() )
+            {
+                const int ready = s.waitUntilReady( true, 200 );
+                if( ready < 0 )
+                    return;
+                if( ready == 0 )
+                    continue;
+                const int n = s.read( buf, sizeof( buf ), false );
+                if( n <= 0 )
+                    return;
+                pending += juce::String::fromUTF8( buf, n );
+                int nl;
+                while( ( nl = pending.indexOfChar( '\n' ) ) >= 0 )
+                {
+                    const auto line = pending.substring( 0, nl ).trim();
+                    pending         = pending.substring( nl + 1 );
+                    if( line.startsWith( "!" ) )
+                    {
+                        // Silent commands (live pointer events) get no reply, so a fast stream of
+                        // moves cannot fill the client's receive buffer.
+                        const auto reply = handle( line.substring( 1 ) );
+                        if( reply.startsWith( "error unknown command" ) )
+                            return;
+                    }
+                    else if( line.isNotEmpty() )
+                    {
+                        const auto reply = handle( line );
+                        const auto out   = reply + "\n";
+                        s.write( out.toRawUTF8(), (int)out.getNumBytesAsUTF8() );
+                        // A browser or other protocol hitting this port sends a non-command first line
+                        // (for example "POST / HTTP/1.1"). Drop the connection so nothing after it runs.
+                        if( reply.startsWith( "error unknown command" ) )
+                            return;
+                    }
+                }
+            }
+        }
+
+        /// Runs a command on the message thread and returns the reply.
+        juce::String handle( const juce::String& line )
+        {
+            auto args = juce::StringArray::fromTokens( line, " ", "\"" );
+            args.trim();
+            args.removeEmptyStrings();
+            if( args.isEmpty() )
+                return "error empty";
+
+            // The callback may still be queued when the wait times out, so its state is owned by a
+            // shared pointer instead of this stack frame. After a timeout the command can still run
+            // late; the reply to this client is "error timeout" either way.
+            struct Job
+            {
+                juce::StringArray   args;
+                juce::String        result{ "error timeout" };
+                juce::WaitableEvent done;
+            };
+            auto job  = std::make_shared<Job>();
+            job->args = args;
+            juce::MessageManager::callAsync( [job] {
+                job->result = execute( job->args );
+                job->done.signal();
+            } );
+            if( !job->done.wait( 5000 ) )
+                return "error timeout";
+            return job->result;
+        }
+
+        static juce::String execute( const juce::StringArray& a )
+        {
+            auto* w   = Host::get().getWindow();
+            auto  cmd = a[0].toLowerCase();
+
+            if( cmd == "ping" )
+                return "ok";
+
+            if( cmd == "quit" )
+            {
+                juce::JUCEApplicationBase::getInstance()->systemRequestedQuit();
+                return "ok";
+            }
+
+            if( w == nullptr )
+                return "error no window";
+
+            if( cmd == "snapshot" && a.size() >= 2 )
+            {
+                // Only .png files inside the device root or the system temp dir, so a stray local client
+                // cannot overwrite arbitrary user files.
+                const juce::File root( kick_emu::root() );
+                const juce::File tmp = juce::File::getSpecialLocation( juce::File::tempDirectory );
+                const juce::File f   = root.getChildFile( a[1] );
+                const bool       ok  = f.hasFileExtension( "png" ) && ( f.isAChildOf( root ) || f.isAChildOf( tmp ) );
+                if( !ok )
+                    return "error snapshot path must be a .png inside " + root.getFullPathName() + " or " + tmp.getFullPathName();
+                f.getParentDirectory().createDirectory();
+                auto img = w->createComponentSnapshot( w->getLocalBounds(), true, 1.0f );
+                f.deleteFile();
+                juce::FileOutputStream out( f );
+                juce::PNGImageFormat   png;
+                if( !out.openedOk() || !png.writeImageToStream( img, out ) )
+                    return "error cannot write " + f.getFullPathName();
+                return "ok " + f.getFullPathName();
+            }
+
+            if( ( cmd == "tap" && a.size() >= 3 ) || ( cmd == "drag" && a.size() >= 5 ) )
+            {
+                const juce::Point<float> p1( a[1].getFloatValue(), a[2].getFloatValue() );
+                if( cmd == "tap" )
+                    return "ok " + input::touch( *w, p1, p1, 0, a.size() >= 4 ? a[3].getIntValue() : 40 );
+
+                const juce::Point<float> p2( a[3].getFloatValue(), a[4].getFloatValue() );
+                return "ok " + input::touch( *w, p1, p2, 12, a.size() >= 6 ? a[5].getIntValue() : 40 );
+            }
+
+            if( ( cmd == "down" || cmd == "move" || cmd == "up" ) && a.size() >= 3 )
+            {
+                const juce::Point<float> p( a[1].getFloatValue(), a[2].getFloatValue() );
+                if( cmd == "down" )
+                    input::pointerDown( *w, p );
+                else if( cmd == "move" )
+                    input::pointerMove( *w, p );
+                else
+                    input::pointerUp( *w, p );
+                return "ok";
+            }
+
+            return "error unknown command " + cmd;
+        }
+
+        juce::StreamingSocket     listener;
+        juce::OwnedArray<Client>  clients; // touched only by the listener thread, then by the destructor after it stops
+        int                       port{ 50901 };
+    };
+
+    //==============================================================================
+    Host& Host::get()
+    {
+        static Host h;
+        return h;
+    }
+
+    void Host::start( juce::Component* Window )
+    {
+        window = Window;
+        log( "device root " + juce::String( root() ) );
+
+        // Skeleton of the unit's filesystem. The SD card and USB stick are absent
+        // until the Surface creates dev/mmcblk1, dev/sda and the matching mounts.
+        for( auto* dir : { "/home/Kick/projects", "/home/Kick/logs", "/home/Kick/prefs", "/sys/devices/soc0", "/proc", "/dev", "/mnt" } )
+            juce::File( devicePath( dir ) ).createDirectory();
+        if( !server )
+            server = std::make_unique<ControlServer>();
+        if( !frames )
+            frames = std::make_unique<FrameStreamer>( Window );
+
+        // The Surface draws Kick's screen inside the device bezel, so Kick's own window gets out
+        // of the way. KICK_EMU_SHOW_WINDOW=1 keeps it up for debugging.
+        if( env( "KICK_EMU_SHOW_WINDOW", "0" ) != "1" )
+            if( auto* dw = dynamic_cast<juce::DocumentWindow*>( Window ) )
+                dw->setMinimised( true );
+        notify( "app started" );
+    }
+
+    void Host::stop()
+    {
+        notify( "app stopped" );
+        frames.reset();
+        server.reset();
+    }
+}

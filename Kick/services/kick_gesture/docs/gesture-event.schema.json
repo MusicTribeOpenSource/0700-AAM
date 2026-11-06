@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MusicTribeOpenSource/kick/gesture-event.schema.json",
+  "title": "kick-gesture output line",
+  "description": "One JSON object per line. A gesture event or a status message. See gesture-events.md.",
+  "oneOf": [
+    {
+      "title": "gesture event",
+      "type": "object",
+      "required": ["type", "hand", "confidence", "t_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": ["swipe_left", "swipe_right", "palm_hold", "fist", "pinch_start", "pinch_change", "pinch_end"]
+        },
+        "value": {
+          "description": "Pinch aperture, 0 is fully closed and 1 is at the release threshold. Present on pinch_start, pinch_change and pinch_end only.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "hand": { "enum": ["left", "right", "unknown"] },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "t_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    {
+      "title": "status message",
+      "type": "object",
+      "required": ["type", "state", "rate_hz", "cpu", "t_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["status"] },
+        "state": { "enum": ["running", "degraded", "disabled", "idle", "no_camera", "error"] },
+        "reason": { "type": "string" },
+        "rate_hz": { "type": "number", "minimum": 0 },
+        "cpu": { "type": "number", "minimum": 0 },
+        "temp_c": { "type": "number" },
+        "t_ms": { "type": "integer", "minimum": 0 }
+      }
+    }
+  ]
+}

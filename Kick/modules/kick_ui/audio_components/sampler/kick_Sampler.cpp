@@ -183,10 +183,17 @@ namespace kick_ui
     juce::String Sampler::saveSample( const juce::String& sampleName )
     {
         juce::File filename;
+#if KICK_EMU
+        // A leading slash makes the sibling an absolute path at the host's root, and juce::File
+        // asserts on that under Windows. The emulator keeps the sample next to the project.
+        const juce::String slash;
+#else
+        const juce::String slash( "/" );
+#endif
         if( sampleName.isEmpty() )
-            filename = ae.getProjectDir().getSiblingFile( "/newSample.wav" );
+            filename = ae.getProjectDir().getSiblingFile( slash + "newSample.wav" );
         else
-            filename = ae.getProjectDir().getSiblingFile( "/" + sampleName + ".wav" );
+            filename = ae.getProjectDir().getSiblingFile( slash + sampleName + ".wav" );
         juce::File f = filename.getNonexistentSibling();
         recorder.getRecordFile().copyFileTo( f );
         return f.getFullPathName();

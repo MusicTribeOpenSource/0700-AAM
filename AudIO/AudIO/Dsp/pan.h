@@ -162,9 +162,10 @@ namespace AudIO
                 break;
                 case Type::LINEAR_4_5DB:
                 {
-                    auto p2 = p * p;
-                    lr.l    = static_cast<T>( gain_ * ( ( 0.5 * ( 1 - p2 ) ) + 0.4775 ) );
-                    lr.r    = static_cast<T>( gain_ * ( ( 0.5 * p2 ) + 0.4775 ) );
+                    // Mirror image curves, so a centred signal is equal on both sides (-4.5 dB).
+                    auto pl = 1.0 - p;
+                    lr.l    = static_cast<T>( gain_ * ( ( 0.5 * pl * pl ) + 0.4775 ) );
+                    lr.r    = static_cast<T>( gain_ * ( ( 0.5 * p * p ) + 0.4775 ) );
                 }
                 break;
                 case Type::EQUAL_POWER:

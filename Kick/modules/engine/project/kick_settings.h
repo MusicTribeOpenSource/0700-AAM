@@ -190,6 +190,24 @@ namespace mt
     };
 
     /// ///////////////////////////////////
+    ///    KickGesture
+    /// ///////////////////////////////////
+    // Camera gesture control. The camera on/off switch is deliberately not stored here: the camera never turns itself
+    // on after a restart, and the switch on the settings page follows what the camera service reports.
+    struct KickGesture : public MTIVTBase
+    {
+        void setup( juce::ValueTree VT, juce::UndoManager* Undo );
+        bool isValid();
+
+        // Gestures drive the panel only while this is on. Off by default.
+        Atomic<bool> enabled;
+        // 1 (strict) to 10 (loose). 5 by default.
+        Atomic<int> sensitivity;
+        // One gesture per entry, as kick_gesture::MappingTable::toString writes it. Empty means the built-in defaults.
+        AtomicString mapping;
+    };
+
+    /// ///////////////////////////////////
     ///    KickPreview
     /// ///////////////////////////////////
     struct KickPreview
@@ -238,6 +256,7 @@ namespace mt
         KickCVClib           cvclib;
         KickMetronome        metronome;
         KickWifi             wifi;
+        KickGesture          gesture;
 
         // Runtime settings, not saved in XML
         KickPreview     preview;

@@ -1,0 +1,47 @@
+# Gesture control end to end. Run: emu/tests/run-gesture-test.sh (it sets KICK_EMU_GESTURES=1 and checks the app log too).
+# The Surface plays the part of kick-gesture: it sends gesture events to the app's IPC server, the app maps them to panel
+# input, and the bank LEDs show the swipes. Palm, fist and pinch have no LED change, so the wrapper script checks the app
+# log for the buttons and knob they press.
+expect connected
+wait 24000
+
+# Open the first demo project so the banks exist (bank A is selected on load).
+button Enter
+wait 10000
+expect led Bank A on
+
+# Swipe right selects the next bank.
+gesture swipe_right
+expect led Bank B on
+gesture swipe_right
+expect led Bank C on
+
+# Swipe left from bank A wraps to H. Go back to A first with two swipes left from C.
+gesture swipe_left
+gesture swipe_left
+gesture swipe_left
+expect led Bank H on
+
+# Open palm presses Play, fist presses Stop.
+gesture palm_hold
+wait 500
+gesture fist
+wait 500
+
+# A pinch turns Q-Link knob 1: start, then the hand opens in steps.
+gesture pinch_start 0.2
+wait 200
+gesture pinch_change 0.4
+wait 200
+gesture pinch_change 0.7
+wait 200
+gesture pinch_change 0.9
+wait 500
+gesture pinch_end 0.9
+wait 500
+
+# Normal panel input still works after gestures.
+button Pad Mix
+wait 1000
+snapshot gesture-surface.png
+quit

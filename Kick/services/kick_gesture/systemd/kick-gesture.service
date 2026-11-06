@@ -1,0 +1,66 @@
+# Copyright (c) 2024 MUSIC Tribe
+#
+# This file is part of Kick.
+#
+# Kick is free software: you can redistribute it and/or modify it under the
+# terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, either version 3 of the License, or (at your option)
+# any later version.
+#
+# Kick is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+# more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with Kick. If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[Unit]
+Description=KICK gesture recognition (reads camera frames while the camera is on)
+# The camera service owns the frames and the Kick app owns the audio engine. Start after both so neither waits for this.
+After=ktkick.service kick-camera.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/kick-gesture --config /etc/kick-gesture.conf
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=5
+
+# A crash here must not touch the audio app, and inference must not take its CPU. These numbers are a first guess to be
+# checked on the unit:
+#  - CPUQuota=100% is the hard cap of one core. The target average is below that and the in-process guard (cpu_soft,
+#    cpu_hard) acts well before the cap does.
+#  - Nice=15 puts it behind the camera service (Nice=10) and everything else.
+#  - No CPUAffinity line: the audio thread pinning is not known yet. Pin this to the cores the audio engine does not use
+#    once that is confirmed.
+Nice=15
+CPUWeight=5
+CPUQuota=100%
+IOWeight=10
+MemorySwapMax=0
+MemoryMax=192M
+
+# Privacy: no network beyond this machine. Frames come in through shared memory and events go out over TCP on
+# loopback to the Kick app (events_ipc). PrivateNetwork is off because a private network namespace has no route to the
+# app's listener. IPAddressDeny=any with IPAddressAllow=127.0.0.0/8 keeps every other address unreachable, and AF_INET
+# is the only family added to AF_UNIX. This is untested on the unit; check it with `systemd-analyze security` and a
+# real connection before shipping.
+IPAddressDeny=any
+IPAddressAllow=127.0.0.0/8
+RestrictAddressFamilies=AF_UNIX AF_INET
+ProtectSystem=strict
+ReadWritePaths=/run /dev/shm
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+# No device access: it does not open the camera, it reads the camera service's shared memory.
+DevicePolicy=closed
+
+[Install]
+WantedBy=multi-user.target

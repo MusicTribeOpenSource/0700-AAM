@@ -1,3 +1,4 @@
+#include <thread>
 #include "DawEngine.h"
 #include "DawSequence.h"
 

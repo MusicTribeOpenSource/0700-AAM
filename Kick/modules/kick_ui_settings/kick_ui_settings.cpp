@@ -32,6 +32,7 @@
 
 // Module source files...
 #include "source/kick_ui_settings_audio.cpp"
+#include "source/kick_ui_settings_camera.cpp"
 #include "source/kick_ui_settings_cv.cpp"
 #include "source/kick_ui_settings_defaults.cpp"
 #include "source/kick_ui_settings_etnernet.cpp"
@@ -95,6 +96,7 @@ namespace kick_ui
         pViews.emplace_back( std::make_unique<SettingsCV>() );
         pViews.emplace_back( std::make_unique<SettingsEthernet>() );
         pViews.emplace_back( std::make_unique<SettingsWifi>() );
+pViews.emplace_back( std::make_unique<SettingsCamera>() );
 
         // Add selector buttons...
         auto idx = 0;

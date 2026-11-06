@@ -1,0 +1,25 @@
+diff --git a/modules/juce_gui_basics/native/juce_Windowing_mac.mm b/modules/juce_gui_basics/native/juce_Windowing_mac.mm
+index ad459d483..a86ff05af 100644
+--- a/modules/juce_gui_basics/native/juce_Windowing_mac.mm
++++ b/modules/juce_gui_basics/native/juce_Windowing_mac.mm
+@@ -518,6 +518,12 @@ Image detail::WindowingHelpers::createIconForFile (const File& file)
+ 
+ static Image createNSWindowSnapshot (NSWindow* nsWindow)
+ {
++   #if defined (MAC_OS_VERSION_15_0) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_VERSION_15_0
++    // CGWindowListCreateImage is unavailable in the macOS 15 SDK. Window
++    // snapshots are not used by Kick, so return an empty image.
++    ignoreUnused (nsWindow);
++    return {};
++   #else
+     JUCE_AUTORELEASEPOOL
+     {
+         // CGWindowListCreateImage is replaced by functions in the ScreenCaptureKit framework, but
+@@ -552,6 +558,7 @@ static Image createNSWindowSnapshot (NSWindow* nsWindow)
+ 
+         return result;
+     }
++   #endif
+ }
+ 
+ Image createSnapshotOfNativeWindow (void* nativeWindowHandle)

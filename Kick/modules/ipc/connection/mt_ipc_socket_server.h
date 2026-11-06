@@ -41,7 +41,8 @@ namespace ipc
         ~MTIPCSocketServer();
 
     public:
-        void start();
+        // Returns false if the listening socket could not be opened.
+        bool start();
         void stop();
         bool areAllValidClientsConnected();
         void updateUnConnectedConnectionIds( std::vector<int> & ids);

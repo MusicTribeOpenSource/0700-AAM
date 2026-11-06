@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+config BR2_PACKAGE_KICK_CAMERA
+	bool "kick-camera"
+	depends on BR2_INSTALL_LIBSTDCPP
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	help
+	  Camera capture service for the Kick. Captures frames from a
+	  V4L2 device (the MIPI CSI sensor or a USB webcam) and shares
+	  them with other processes through POSIX shared memory.
+
+	  The camera stays closed until a client sends "enable" on the
+	  control socket. The service has no network access and writes no
+	  frames to disk unless a debug option is set.
+
+	  It is plain C++17 with no dependencies beyond the C and C++
+	  libraries, and installs one binary, a config file and a systemd
+	  unit. The unit is only installed and enabled when the init
+	  system is systemd.
+
+	  Source: Kick/services/kick_camera in this repository.
+
+comment "kick-camera needs a toolchain w/ C++ and threads"
+	depends on !BR2_INSTALL_LIBSTDCPP || !BR2_TOOLCHAIN_HAS_THREADS

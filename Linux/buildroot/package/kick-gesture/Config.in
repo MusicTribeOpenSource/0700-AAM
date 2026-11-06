@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+config BR2_PACKAGE_KICK_GESTURE
+	bool "kick-gesture"
+	depends on BR2_INSTALL_LIBSTDCPP
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on BR2_TOOLCHAIN_USES_GLIBC
+	depends on BR2_aarch64 || BR2_x86_64
+	depends on BR2_PACKAGE_KICK_CAMERA
+	help
+	  Hand gesture recognition service for the Kick. It reads the
+	  frames the kick-camera service publishes in shared memory,
+	  finds a hand with two small neural networks (MediaPipe palm
+	  detection and hand landmark, run by ONNX Runtime), and turns
+	  the landmark stream into discrete events: swipe left and right,
+	  palm hold, fist, and pinch start, change and end. The events
+	  leave on a Unix socket as one JSON object per line. No image
+	  is stored and the service has no network access.
+
+	  It does no work while the camera is off, and it halves its rate
+	  or stops when the CPU or the board runs hot.
+
+	  The ONNX Runtime prebuilt archive and the model files are
+	  downloaded by Buildroot as extra downloads and checked against
+	  the hashes in kick-gesture.hash. They are never committed. The
+	  ONNX Runtime archive is built against glibc, so a musl or
+	  uClibc toolchain cannot use it.
+
+	  Source: Kick/services/kick_gesture in this repository.
+
+comment "kick-gesture needs kick-camera and a glibc toolchain w/ C++ and threads"
+	depends on BR2_aarch64 || BR2_x86_64
+	depends on !BR2_INSTALL_LIBSTDCPP || !BR2_TOOLCHAIN_HAS_THREADS \
+		|| !BR2_TOOLCHAIN_USES_GLIBC || !BR2_PACKAGE_KICK_CAMERA

@@ -44,7 +44,8 @@
 
 #include <memory>
 
-#if !defined(__GNUC__)
+// SSE path: MSVC on x86 only. GCC, Clang and MSVC on ARM64 use the scalar loop.
+#if !defined(__GNUC__) && ( defined(_M_X64) || defined(_M_IX86) )
 #include <emmintrin.h>
 #include <pmmintrin.h>
 #include <xmmintrin.h>
@@ -66,7 +67,7 @@ namespace {
             of the frequencies of interest is in fftBuffer[0...fftFrameSize].
         */
     {
-#if !defined(__GNUC__)
+#if !defined(__GNUC__) && ( defined(_M_X64) || defined(_M_IX86) )
         const auto number = 2 * fftFrameSize - 2;
         for( long i = 2, j = 0; i < number; i += 2 ) {
             for( long bitm = fftFrameSize; bitm != 1; bitm >>= 1 ) {

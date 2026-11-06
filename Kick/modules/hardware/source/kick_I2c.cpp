@@ -20,6 +20,10 @@
  */
 #include "kick_I2c.h"
 
+#if KICK_EMU
+    #include "kick_emu_hal.h"
+#endif
+
 #if( JUCE_LINUX || __linux__ )
     #include <iostream>
     #include <fcntl.h>
@@ -50,7 +54,9 @@ namespace mt
 
     bool I2CDevice::openDevice()
     {
-#if( JUCE_LINUX || __linux__ )
+#if KICK_EMU
+        return true; // Virtual DAC, see emu/modules/kick_emu
+#elif( JUCE_LINUX || __linux__ )
         file_ = open( devicePath_.c_str(), O_RDWR );
         if( file_ < 0 )
         {
@@ -86,7 +92,9 @@ namespace mt
 
     bool I2CDevice::writeBytes( const uint8_t* data, int length )
     {
-#if( JUCE_LINUX || __linux__ )
+#if KICK_EMU
+        return kick_emu::i2cWrite( 3, address_, data, length );
+#elif( JUCE_LINUX || __linux__ )
         if( !isOpen() )
         {
             DBG( "I2C device is not open" );
@@ -108,7 +116,9 @@ namespace mt
 
     bool I2CDevice::readBytes( uint8_t* buffer, int length )
     {
-#if( JUCE_LINUX || __linux__ )
+#if KICK_EMU
+        return kick_emu::i2cRead( 3, address_, buffer, length );
+#elif( JUCE_LINUX || __linux__ )
         if( !isOpen() )
         {
             DBG( "I2C device is not open" );

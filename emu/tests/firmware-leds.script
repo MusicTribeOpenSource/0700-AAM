@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Output commands from the unmodified Kick host, checked against the control surface firmware's LED table.
+#
+#   cmake -S Firmware/kick-mcu -B build/mcu -G Ninja && cmake --build build/mcu
+#   emu/run.sh --firmware --script emu/tests/firmware-leds.script
+#
+# kick-mcu-sim plays the MCU and `expect led` / `expect pad` read its table. What the host sends
+# on its own is small: at startup it clears every pad (PAD_SET_ALL_SINGLE_COLOUR, Trans). It sends
+# button LEDs only from events the emulator does not produce (transport, bank changes from a
+# loaded project), so the button, blink and strip paths are covered by the replay trace
+# (emu/tests/traces/leds.trace) and the unit tests, not by this script.
+expect streaming
+wait 3000
+expect pad 1 off 3000
+expect pad 8 off 3000
+expect pad 16 off 3000

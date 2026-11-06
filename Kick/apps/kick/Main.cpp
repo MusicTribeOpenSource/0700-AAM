@@ -22,11 +22,16 @@
 #include "kick_ui/kick_ui.h"
 #include "audio_engine/audio_engine.h"
 #include "kick_device_adapter.h"
+#include "kick_gesture_adapter.h"
 #include "kick_audio_engine_adapter.h"
 #include "kick_audio_interface.h"
 
 #ifdef PERFETTO
     #include "melatonin_perfetto/melatonin_perfetto.h"
+#endif
+
+#if KICK_EMU
+    #include <kick_emu/kick_emu.h>
 #endif
 
 #define ENABLE_X11_FULLSCREEN ( 0 )
@@ -144,6 +149,9 @@ public:
         // Initialize Audio engine and interface ...
         mt::getAudioInterface();
 
+        // Gesture control: listens for kick-gesture on 127.0.0.1 and follows the camera service.
+        gestureAdapter.reset( new KickGestureAdapter() );
+
         // Initialize User Interface...
         w = std::make_unique<HomeWindow>( getApplicationName() );
 
@@ -166,7 +174,8 @@ public:
         //bounds = display.logicalToPhysical( ui::layout::screen, nullptr );
         w->setBounds( bounds );
 
-#if( JUCE_IOS || JUCE_ANDROID || JUCE_LINUX || __linux__ )
+#if( JUCE_IOS || JUCE_ANDROID || JUCE_LINUX || __linux__ ) && !KICK_EMU
+        // The device runs the window as a kiosk. The emulator keeps a normal window.
         juce::Desktop::getInstance().setKioskModeComponent( w.get(), false );
 #endif
         // Position ...
@@ -174,6 +183,10 @@ public:
 
         // Visibility...
         w->setVisible( true );
+
+#if KICK_EMU
+        kick_emu::Host::get().start( w.get() );
+#endif
 
 #if PERFETTO
         MelatoninPerfetto::get().beginSession();
@@ -186,7 +199,11 @@ public:
         MelatoninPerfetto::get().endSession();
 #endif
         // Add your application's shutdown code here ...
+#if KICK_EMU
+        kick_emu::Host::get().stop();
+#endif
         w = nullptr;
+        gestureAdapter = nullptr;
         adapter = nullptr;
     }
 
@@ -243,6 +260,7 @@ public:
 private:
     std::unique_ptr<juce::DocumentWindow> w;
     std::unique_ptr<KickDeviceAdapter>    adapter;
+    std::unique_ptr<KickGestureAdapter>   gestureAdapter;
     std::unique_ptr<KickAudioEngineAdapter>    engineAdapter;
     std::shared_ptr<contracts::AudioInterface> audioInterface;
 #if PERFETTO

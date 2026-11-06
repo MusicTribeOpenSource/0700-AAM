@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "tracking": {
+    "min_hand_score": 0.8,
+    "min_event_confidence": 0.6,
+    "lost_ms": 300,
+    "flip_x": true,
+    "swap_handedness": true
+  },
+  "pose": {
+    "finger_extended_ratio": 1.15,
+    "thumb_extended_ratio": 0.6,
+    "pinch_min_reach": 1.2
+  },
+  "palm_hold": {
+    "hold_ms": 600,
+    "max_speed": 1,
+    "exit_ms": 200
+  },
+  "fist": {
+    "hold_ms": 350,
+    "max_speed": 1.5,
+    "exit_ms": 200
+  },
+  "swipe": {
+    "window_ms": 500,
+    "min_travel": 2.5,
+    "min_speed": 4,
+    "min_dominance": 2,
+    "min_monotonic": 0.8,
+    "min_extended": 3,
+    "rearm_ms": 150,
+    "rest_speed": 1.5
+  },
+  "pinch": {
+    "on": 0.3,
+    "off": 0.6,
+    "min": 0.12,
+    "start_ms": 120,
+    "end_ms": 100,
+    "deadband": 0.02
+  },
+  "rate_limit_ms": {
+    "swipe": 800,
+    "palm_hold": 1500,
+    "fist": 1500,
+    "pinch_start": 300,
+    "pinch_change": 50
+  }
+}

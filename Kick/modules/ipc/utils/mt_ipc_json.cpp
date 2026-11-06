@@ -111,6 +111,11 @@ namespace ipc
 					while ((index = dotSeparatedKey.indexOfChar(start, '.')) != -1)
 					{
 						key = dotSeparatedKey.substring(start, index);
+						if (obj == nullptr)
+						{
+							// the root, or an intermediate key, holds a value that is not an object
+							throw ipc::MTIPCException(ipc::JSON_SET_VALUE_ERROR_CODE, ipc::JSON_SET_VALUE_ERROR_MESSAGE);
+						}
 						if (!obj->hasProperty(key))
 						{
 							obj->setProperty(key, new juce::DynamicObject());
@@ -120,6 +125,10 @@ namespace ipc
 						start = index + 1;
 					}
 
+					if (obj == nullptr)
+					{
+						throw ipc::MTIPCException(ipc::JSON_SET_VALUE_ERROR_CODE, ipc::JSON_SET_VALUE_ERROR_MESSAGE);
+					}
 					key = dotSeparatedKey.substring(start, dotSeparatedKey.length());
 					obj->setProperty(key, value);
 				}
@@ -154,9 +163,11 @@ namespace ipc
 					while ((index = dotSeparatedKey.indexOfChar(start, '.')) != -1)
 					{
 						key = dotSeparatedKey.substring(start, index);
-						if (!obj->hasProperty(key))
+						// A missing key, or an intermediate value that is not an object, ends the walk:
+						// hand back the default (or raise when the caller gave none).
+						if (obj == nullptr || !obj->hasProperty(key))
 						{
-							_returnDefaultValueOrRaiseException_(defaultValue);
+							return _returnDefaultValueOrRaiseException_(defaultValue);
 						}
 						obj = obj->getProperty(key).getDynamicObject();
 
@@ -168,9 +179,9 @@ namespace ipc
 				}
 
 			}
-			catch (const ipc::MTIPCException& ex)
+			catch (const ipc::MTIPCException&)
 			{
-				throw ex;
+				throw;
 			}
 			catch (std::exception ex)
 			{

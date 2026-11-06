@@ -37,6 +37,14 @@
 namespace mt
 {
 
+    // How long MCUUpdate() waits for each answer. The MCU erases the inactive slot before it answers
+    // INITIATE and again before it answers END, so those two get the longer budget.
+    namespace McuAckTimeout
+    {
+        constexpr juce::uint32 ackTimeoutMs     = 3000;
+        constexpr juce::uint32 slowAckTimeoutMs = 15000;
+    } // namespace McuAckTimeout
+
     class FirmwareUpdate
     {
     public:
@@ -89,6 +97,8 @@ namespace mt
 
         bool                                             isMCUImagePresent();
         int                                              MCUUpdate( juce::String& path );
+        void                                             armWait( juce::uint32 budgetMs );
+        void                                             finishTransfer();
         bool                                             scanFirmwareOnPCApp();
         std::vector<std::pair<std::string, linuxFwInfo>> scanFirmwareOnUSBDrives();
         std::vector<std::pair<std::string, linuxFwInfo>> scanFirmwareOnSDCards();
@@ -99,6 +109,19 @@ namespace mt
         bool                        updateStatus          = false;
         bool                        boDataTransferPending = true;
         bool                        boUpdateComplete      = false;
+
+        // State of one MCU transfer. MCUUpdate() resets all of it when a transfer starts.
+        // 2 address bytes + up to 32 data bytes + the trailing byte DATA frames carry, rounded up.
+        static constexpr int kMaxHexRecordData                 = 32;
+        char                 binaryData[kMaxHexRecordData + 4] = { 0 };
+        int                  totalRead                         = 0;
+        juce::int64          currentPos                        = 0;
+        juce::int64          fileSize                          = 0;
+        int                  hexRecSize                        = 43;
+        bool                 boSwUpdateStartUpCheck            = false;
+        bool                 endSent                           = false;
+        juce::uint32         waitStartMs                       = 0;
+        juce::uint32         waitBudgetMs                      = 0;
         std::atomic<SwUpdateMode_t> swUpdateMode          = SwUpdateMode_t::NONE;
         //MCU Related
         std::atomic<MCUUpdateAction> mcuUpdateState;
@@ -110,10 +133,15 @@ namespace mt
         {
         public:
             void        AddPath( const juce::String& hexFilePath );
-            int         readNext( char redData[] );
+            // Returns the byte count written to redData (address + data), -1 at end of file, -2 for an
+            // extended address record, or parseError for a malformed record or one that exceeds capacity.
+            static constexpr int parseError = -3;
+            int                  readNext( char redData[], int capacity );
             juce::int64 getSize();
 
         private:
+            bool readHexByte( int& value );
+
             std::unique_ptr<juce::FileInputStream> fileStream;
         };
 

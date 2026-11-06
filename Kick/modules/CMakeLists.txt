@@ -17,6 +17,7 @@ juce_add_modules(
     kick_leds
 	ipc
 	contracts
+	gesture
 )
 
 add_subdirectory(3rdParty)

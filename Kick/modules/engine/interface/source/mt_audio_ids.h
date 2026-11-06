@@ -309,6 +309,10 @@ namespace mt
         DECLARE_ID( wifienabled )
         DECLARE_ID( wifissid )
         DECLARE_ID( wifipasswd )
+        DECLARE_ID( GESTURE )
+        DECLARE_ID( gestureenabled )
+        DECLARE_ID( gesturesensitivity )
+        DECLARE_ID( gesturemapping )
         DECLARE_ID( Project )
 
         DECLARE_ID( IsPreviewOn )

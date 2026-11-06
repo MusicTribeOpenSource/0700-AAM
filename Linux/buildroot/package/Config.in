@@ -2511,4 +2511,9 @@ menu "Text editors and viewers"
 	source "package/vim/Config.in"
 endmenu
 
+menu "Kick"
+	source "package/kick-camera/Config.in"
+	source "package/kick-gesture/Config.in"
+endmenu
+
 endmenu

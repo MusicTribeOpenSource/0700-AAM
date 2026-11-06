@@ -1,5 +1,9 @@
 # Main application.  
 add_subdirectory(kick)
+if(KICK_EMU)
+    # Emulator build: only the device binary.
+    return()
+endif()
 add_subdirectory(kick_device_control)
 add_subdirectory(kick_gui)
 #add_subdirectory(kick_logger)

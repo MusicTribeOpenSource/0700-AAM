@@ -1,0 +1,90 @@
+diff --git a/modules/juce_gui_basics/components/juce_Component.cpp b/modules/juce_gui_basics/components/juce_Component.cpp
+index c559f6eed..e33285e35 100644
+--- a/modules/juce_gui_basics/components/juce_Component.cpp
++++ b/modules/juce_gui_basics/components/juce_Component.cpp
+@@ -290,7 +290,15 @@ bool Component::isShowing() const
+         return parentComponent->isShowing();
+ 
+     if (auto* peer = getPeer())
++    {
++       #if KICK_EMU
++        // The emulator minimises Kick's window and draws it inside the KICK Surface, so it still counts as showing.
++        ignoreUnused (peer);
++        return true;
++       #else
+         return ! peer->isMinimised();
++       #endif
++    }
+ 
+     return false;
+ }
+@@ -1095,7 +1103,16 @@ bool Component::contains (Point<float> point)
+ 
+         if (flags.hasHeavyweightPeerFlag)
+             if (auto* peer = getPeer())
++            {
++               #if KICK_EMU
++                // The peer asks the OS which window is on top. The emulated window is minimised behind the KICK Surface,
++                // which injects touches into it, so the hit test above is the whole answer.
++                ignoreUnused (peer);
++                return true;
++               #else
+                 return peer->contains (detail::ComponentHelpers::localPositionToRawPeerPos (*this, point).roundToInt(), true);
++               #endif
++            }
+     }
+ 
+     return false;
+@@ -2593,10 +2610,16 @@ void Component::takeKeyboardFocus (FocusChangeType cause, FocusChangeDirection d
+     if (auto* peer = getPeer())
+     {
+         const WeakReference<Component> safePointer (this);
++       #if KICK_EMU
++        // The unit has one window and it always has focus. The emulated window sits behind the KICK Surface and is
++        // never the OS key window, so keep focus inside it without asking the OS (which would also steal activation).
++        ignoreUnused (peer);
++       #else
+         peer->grabFocus();
+ 
+         if (! peer->isFocused() || currentlyFocusedComponent == this)
+             return;
++       #endif
+ 
+         WeakReference<Component> componentLosingFocus (currentlyFocusedComponent);
+ 
+diff --git a/modules/juce_gui_basics/windows/juce_ComponentPeer.cpp b/modules/juce_gui_basics/windows/juce_ComponentPeer.cpp
+index 0bd3784ed..0d173d365 100644
+--- a/modules/juce_gui_basics/windows/juce_ComponentPeer.cpp
++++ b/modules/juce_gui_basics/windows/juce_ComponentPeer.cpp
+@@ -369,6 +369,11 @@ void ComponentPeer::handleFocusGain()
+ 
+ void ComponentPeer::handleFocusLoss()
+ {
++   #if KICK_EMU
++    // The OS window losing focus is not the unit losing focus: the KICK Surface is in front by design.
++    return;
++   #endif
++
+     if (component.hasKeyboardFocus (true))
+     {
+         lastFocusedComponent = Component::currentlyFocusedComponent;
+diff --git a/modules/juce_gui_basics/windows/juce_TopLevelWindow.cpp b/modules/juce_gui_basics/windows/juce_TopLevelWindow.cpp
+index ad0e624ef..96328ed76 100644
+--- a/modules/juce_gui_basics/windows/juce_TopLevelWindow.cpp
++++ b/modules/juce_gui_basics/windows/juce_TopLevelWindow.cpp
+@@ -249,6 +249,15 @@ TopLevelWindow* TopLevelWindow::getActiveTopLevelWindow() noexcept
+         }
+     }
+ 
++   #if KICK_EMU
++    // Kick parents its dialogs to the active window. The emulated window is never active (the KICK Surface is),
++    // so fall back to the first window on the desktop, as the unit's only window would be.
++    if (best == nullptr)
++        for (int i = 0; i < TopLevelWindow::getNumTopLevelWindows(); ++i)
++            if (auto* tlw = TopLevelWindow::getTopLevelWindow (i); tlw->isOnDesktop())
++                return tlw;
++   #endif
++
+     return best;
+ }
+ 
