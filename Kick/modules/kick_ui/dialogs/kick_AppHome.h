@@ -27,6 +27,7 @@ namespace kick_ui
 {
     class KickLEDs;
     class AppStatusbar;
+    class CameraIndicator;
     class KickHome : public juce::Component
         , private juce::AsyncUpdater
     {
@@ -61,6 +62,9 @@ namespace kick_ui
 
         std::unique_ptr<Component>                 ctrlBar_;
         std::unique_ptr<KickLEDs>                  ledControl_;
+        // Red dot while the camera is capturing. Follows contracts::GestureSignals::cameraStatusChanged.
+        std::unique_ptr<CameraIndicator>           cameraIndicator_;
+        sigslot::scoped_connection                 cameraConnection_;
         juce::Component::SafePointer<AppStatusbar> statusBar_;
         int                                        page{ 0 };
 

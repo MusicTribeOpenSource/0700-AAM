@@ -35,14 +35,21 @@ namespace Controls
 
         ~HwSerialData()
         {
-#ifndef __APPLE__
+#if !defined( __APPLE__ ) || KICK_EMU
             close();
 #endif
         }
 
         void connect()
         {
-#if( JUCE_LINUX || __linux__ )
+#if( JUCE_LINUX || __linux__ || KICK_EMU )
+#if KICK_EMU
+            // The emulator's control surface is a pty; KICK_SERIAL_PORT names its slave side,
+            // or a tcp://host:port address where there is no pty (Windows).
+            juce::String serialDev = juce::SystemStats::getEnvironmentVariable( "KICK_SERIAL_PORT", {} );
+            if( serialDev.isNotEmpty() && ( serialDev.startsWith( "tcp://" ) || juce::File( serialDev ).exists() ) )
+            {
+#else
             if( juce::File( "/dev/ttymxc0" ).exists() )
             {
                 juce::StringPairArray portlist = SerialPort::getSerialPortPaths();
@@ -53,6 +60,7 @@ namespace Controls
                 bool         hasSerialPort = false;
                 juce::String serialDev     = "/dev/ttymxc0";
                 serialDev                  = "/dev/ttymxc0";
+#endif
 
                 auto serialDebug = []( juce::String str1, juce::String str2 ) {
                     DBG( str1 );
@@ -60,7 +68,7 @@ namespace Controls
                 };
                 SerialPortConfig config( 230400, 8, SerialPortConfig::SERIALPORT_PARITY_NONE, SerialPortConfig::STOPBITS_1, SerialPortConfig::FLOWCONTROL_NONE );
 
-    #if( JUCE_LINUX || __linux__ )
+    #if( JUCE_LINUX || __linux__ || KICK_EMU )
                 juce::String devPath = serialDev;
     #endif
                 if( sPort )
@@ -70,7 +78,7 @@ namespace Controls
                     sPort.reset( nullptr );
                 }
                 {
-    #if( JUCE_LINUX || __linux__ )
+    #if( JUCE_LINUX || __linux__ || KICK_EMU )
                     CPktMgr::HWMsg_t hwMsg;
                     hwMsg.pktType = CPktMgr::EN_PKT_TYPE_SYSTEM;
                     hwMsg.pktCmd  = contracts::DeviceControlContracts::SysCmd::EN_SYS_COMM_INIT;
@@ -90,6 +98,9 @@ namespace Controls
             else
             {
                 DBG( "Serial Not Found" );
+#if KICK_EMU
+                juce::Logger::writeToLog( "[emu] KICK_SERIAL_PORT not set or missing; start emu/run.sh or KICK Surface first" );
+#endif
             }
 #endif
         }
@@ -103,7 +114,7 @@ namespace Controls
 
         void reconnect()
         {
-#ifndef __APPLE__
+#if !defined( __APPLE__ ) || KICK_EMU
             close();
             connect();
 #endif
@@ -129,7 +140,7 @@ namespace Controls
         void handleAsyncUpdate() override { txEvent.signal(); }
         void sendSerialOutData( const std::vector<char>& data )
         {
-#if( JUCE_LINUX || __linux__ )
+#if( JUCE_LINUX || __linux__ || KICK_EMU )
             if( !output )
                 return;
 
@@ -176,9 +187,13 @@ namespace Controls
 
             while( rxLength )
             {
-                int pktIndex     = 0;
-                int pktOffset    = 0;
-                int packetLength = byteArray[5 + pktIndex] + 7;
+                int pktIndex  = 0;
+                int pktOffset = 0;
+                // The size byte sits at offset 5, so fewer bytes than that cannot hold a frame.
+                if( rxLength < 6 )
+                    break;
+                // Unsigned: a size byte above 127 must not turn into a negative length.
+                int packetLength = (uint8_t)byteArray[5 + pktIndex] + 7;
                 // DBG("Packet Length: " << packetLength);
 
                 if( ( rxLength >= packetLength ) && ( byteArray[0] == 'M' ) && ( byteArray[1] == 'T' ) )
@@ -275,7 +290,7 @@ namespace Controls
 
                 while( txQueue.try_dequeue( item ) && !threadShouldExit() )
                 {
-#if( JUCE_LINUX || __linux__ )
+#if( JUCE_LINUX || __linux__ || KICK_EMU )
                     txData.clear();
                     ms_objPktMgrUsb.BuildAndTransmitPacket( item, txData );
                     sendSerialOutData( txData );
@@ -324,7 +339,7 @@ namespace Controls
 
     void Controls::InputEvents::reconnect()
     {
-#ifndef __APPLE__
+#if !defined( __APPLE__ ) || KICK_EMU
         if( _FPPort ) _FPPort->reconnect();
 #endif
     }

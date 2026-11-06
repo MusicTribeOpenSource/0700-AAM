@@ -19,6 +19,8 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 #include "kick_FirmwareUpdate.h"
+#include <array>
+#include <cstring>
 #include "contracts/dcl/dcl_contracts_helper.h"
 #include "contracts/dcl/dcl_signals.h"
 
@@ -87,24 +89,14 @@ namespace mt
 
     MCUUpdateAction FirmwareUpdate::getMcuUpdateState( int f_data )
     {
-        MCUUpdateAction returnData = MCUUpdateAction::EN_SW_UPDATE_END;
-        if( f_data == 0 )
-        {
-            returnData = MCUUpdateAction::EN_SW_UPDATE_END;
-        }
-        else if( f_data > 0 )
-        {
-            returnData = MCUUpdateAction::EN_SW_UPDATE_DATA;
-        }
-        else if( f_data == -2 )
-        {
-            returnData = MCUUpdateAction::EN_SW_UPDATE_DATABASE;
-        }
-        else
-        {
-            returnData = MCUUpdateAction::EN_SW_UPDATE_END;
-        }
-        return ( returnData );
+        // readNext(): > 0 data record, -1 end of file, -2 extended address, parseError malformed record.
+        if( f_data > 0 )
+            return MCUUpdateAction::EN_SW_UPDATE_DATA;
+        if( f_data == -2 )
+            return MCUUpdateAction::EN_SW_UPDATE_DATABASE;
+        if( f_data == -1 )
+            return MCUUpdateAction::EN_SW_UPDATE_END;
+        return MCUUpdateAction::EN_SW_UPDATE_FAILURE;
     }
 
     void FirmwareUpdate::updateFirmware()
@@ -147,184 +139,217 @@ namespace mt
         mt::swupdatemsg_t data;
 
         DBG( "MCU UPDATE" );
-        static bool        boSwUpdateStartUpCheck = false;
-        static char        binaryData[32]         = { 0 };
-        static int         totalRead              = 0;
-        static juce::int64 currentPos             = 0;
-        static int         hexRecSize             = 43;
-        static juce::int64 fileSize               = 0;
 
-        //if(CheckForVersion() == 1)
+        using namespace McuAckTimeout;
+
+        if( !boSwUpdateStartUpCheck )
         {
-            if( !boSwUpdateStartUpCheck )
-            {
-                boSwUpdateStartUpCheck = true;
-                //DBG( "First Time" );
-                parser.AddPath( McuFilePath );
-                fileSize = parser.getSize() / hexRecSize;
-                //DBG("FileSize" << fileSize);
-                if( fileSize == 0 )
-                    jassertfalse;
+            // Start of a transfer: nothing may carry over from a previous attempt.
+            boSwUpdateStartUpCheck = true;
+            boDataTransferPending  = true;
+            boUpdateComplete       = false;
+            endSent                = false;
+            totalRead              = 0;
+            std::memset( binaryData, 0, sizeof( binaryData ) );
 
-                currentPos += 1;
-                totalProgress    = (int)( 100 * currentPos / fileSize );
-                boUpdateComplete = false;
-                mcuUpdateState   = MCUUpdateAction::EN_SW_UPDATE_INITIATE;
+            parser.AddPath( McuFilePath );
+            fileSize = parser.getSize() / hexRecSize;
+            if( fileSize == 0 )
+            {
+                DBG( "MCU image missing or empty: " << McuFilePath );
+                mcuUpdateState = MCUUpdateAction::EN_SW_UPDATE_FAILURE;
             }
-
-            while( boDataTransferPending )
+            else
             {
-                //DBG("Sw Update State Machine");
-                switch( mcuUpdateState )
-                {
-                    ////////////////////////////////////////
-                    case MCUUpdateAction::EN_SW_UPDATE_INITIATE:
-                        ////////////////////////////////////////
-                        {
-#ifdef DEBUG_FWUPDATE
-                            DBG( "Initiate" );
-#endif
-                            auto hwMsg =
-                                contracts::DclContractsHelper::SendSwUpdateCmdMessage( (int)MCUUpdateAction::EN_SW_UPDATE_INITIATE );
+                currentPos     = 1;
+                totalProgress  = (int)( 100 * currentPos / fileSize );
+                mcuUpdateState = MCUUpdateAction::EN_SW_UPDATE_INITIATE;
+            }
+        }
 
-                            contracts::DclSignals::sendCommandToDcl( hwMsg );
-                            mcuUpdateState = MCUUpdateAction::EN_SW_UPDATE_IDLE;
+        while( boDataTransferPending )
+        {
+            switch( mcuUpdateState )
+            {
+                ////////////////////////////////////////
+                case MCUUpdateAction::EN_SW_UPDATE_INITIATE:
+                    ////////////////////////////////////////
+                    {
+#ifdef DEBUG_FWUPDATE
+                        DBG( "Initiate" );
+#endif
+                        auto hwMsg =
+                            contracts::DclContractsHelper::SendSwUpdateCmdMessage( (int)MCUUpdateAction::EN_SW_UPDATE_INITIATE );
+
+                        armWait( slowAckTimeoutMs );
+                        mcuUpdateState = MCUUpdateAction::EN_SW_UPDATE_IDLE;
+                        contracts::DclSignals::sendCommandToDcl( hwMsg );
+                        break;
+                    }
+                /////////////////////////////////////////////
+                case MCUUpdateAction::EN_SW_UPDATE_BEGIN_TRANSFER:
+                    /////////////////////////////////////////////
+                    {
+#ifdef DEBUG_FWUPDATE
+                        DBG( "Begin Transfer" );
+#endif
+                        mcuUpdateState = MCUUpdateAction::EN_SW_UPDATE_ACK;
+                    }
+                    break;
+                ///////////////////////////////////////
+                case MCUUpdateAction::EN_SW_UPDATE_DATA:
+                    ///////////////////////////////////////
+                    {
+#ifdef DEBUG_FWUPDATE
+                        DBG( "Data" );
+#endif
+                        std::vector<int> sendData;
+                        sendData.push_back( MCUUpdateAction::EN_SW_UPDATE_DATA );
+                        for( unsigned int i = 0; i <= (unsigned int)totalRead; i++ )
+                        {
+                            sendData.push_back( binaryData[i] );
+                        }
+                        armWait( ackTimeoutMs );
+                        mcuUpdateState = MCUUpdateAction::EN_SW_UPDATE_IDLE;
+                        hwMessage.data = sendData;
+
+                        contracts::DclSignals::createAndSendCommandToDcl( hwMessage );
+
+                        currentPos += 1;
+                        // Update the progres bar
+                        data.command_status = mt::RECOVERY_STATUS::RUN;
+                        data.nsteps         = linuxsteps; //last step
+                        data.curstep        = linuxsteps;
+                        double _progress    = ( (float)currentPos / (float)fileSize ) * 100;
+
+                        // Calculate the remaining percentage
+                        double remainingPercentage = 100.0 - linuxPercentage;
+
+                        // Calculate the remaining percentage based on _progress
+                        double remainingFromProgress = remainingPercentage * ( _progress / 100.0 );
+
+                        // Update total progress by adding the remaining percentage from _progress
+                        totalProgress = linuxPercentage + remainingFromProgress;
+
+                        data.totalper = totalProgress;
+
+#ifdef DEBUG_FWUPDATE
+                        DBG( "Linux Stpes -> " << linuxsteps );
+                        DBG( "remaining Percentage" << remainingPercentage );
+                        DBG( "remaining From Progress" << remainingFromProgress );
+                        DBG( "Total Progress with MCU " << totalProgress );
+#endif
+                        if( swupdateStatus )
+                            swupdateStatus( data );
+
+                        break;
+                    }
+                ////////////////////////////////////////
+                case MCUUpdateAction::EN_SW_UPDATE_DATABASE:
+                    ///////////////////////////////////////
+                    {
+#ifdef DEBUG_FWUPDATE
+                        DBG( "DataBase" );
+#endif
+                        std::vector<int> sendBaseData;
+                        sendBaseData.push_back( MCUUpdateAction::EN_SW_UPDATE_DATABASE );
+                        for( unsigned int i = 0; i < 2; i++ )
+                        {
+                            sendBaseData.push_back( (int)binaryData[i] );
+                        }
+                        hwMessage.data = sendBaseData;
+                        armWait( ackTimeoutMs );
+                        mcuUpdateState = MCUUpdateAction::EN_SW_UPDATE_IDLE;
+                        contracts::DclSignals::createAndSendCommandToDcl( hwMessage );
+                        break;
+                    }
+                ///////////////////////////////////
+                case MCUUpdateAction::EN_SW_UPDATE_END:
+                    ///////////////////////////////////
+                    {
+                        // END is sent once, then the transfer is only done when the MCU acks it. The ack
+                        // arrives as EN_SW_UPDATE_ACK, which finishes the update below.
+#ifdef DEBUG_FWUPDATE
+                        DBG( "END -> waiting for ack" );
+#endif
+                        std::vector<int> sendBaseData;
+                        sendBaseData.push_back( MCUUpdateAction::EN_SW_UPDATE_END );
+                        hwMessage.data = sendBaseData;
+                        endSent        = true;
+                        armWait( slowAckTimeoutMs );
+                        mcuUpdateState = MCUUpdateAction::EN_SW_UPDATE_IDLE;
+                        contracts::DclSignals::createAndSendCommandToDcl( hwMessage );
+                        break;
+                    }
+                ///////////////////////////////////
+                case MCUUpdateAction::EN_SW_UPDATE_ACK:
+                    ///////////////////////////////////
+                    {
+#ifdef DEBUG_FWUPDATE
+                        DBG( "Ack" );
+#endif
+                        if( endSent )
+                        {
+                            finishTransfer();
+                            SwUpdateSuccess     = 1;
+                            data.command_status = mt::RECOVERY_STATUS::SUCCESS;
+                            data.totalper       = 100.0;
+                            if( swupdateStatus )
+                                swupdateStatus( data );
                             break;
                         }
-                    /////////////////////////////////////////////
-                    case MCUUpdateAction::EN_SW_UPDATE_BEGIN_TRANSFER:
-                        /////////////////////////////////////////////
+
+                        totalRead = parser.readNext( binaryData, (int)sizeof( binaryData ) );
+                        mcuUpdateState = getMcuUpdateState( totalRead );
+                        break;
+                    }
+                ///////////////////////////////////
+                case MCUUpdateAction::EN_SW_UPDATE_IDLE:
+                    ///////////////////////////////////
+                    {
+                        // Waiting for handleCommand() to move the state on. Give up when the MCU stays silent.
+                        if( juce::Time::getMillisecondCounter() - waitStartMs > waitBudgetMs )
                         {
-#ifdef DEBUG_FWUPDATE
-                            DBG( "Begin Transfer" );
-#endif
-                            mcuUpdateState = MCUUpdateAction::EN_SW_UPDATE_ACK;
+                            DBG( "MCU did not answer within " << (int)waitBudgetMs << " ms" );
+                            auto idle = MCUUpdateAction::EN_SW_UPDATE_IDLE;
+                            mcuUpdateState.compare_exchange_strong( idle, MCUUpdateAction::EN_SW_UPDATE_FAILURE );
+                        }
+                        else
+                        {
+                            juce::Thread::sleep( 1 );
                         }
                         break;
-                    ///////////////////////////////////////
-                    case MCUUpdateAction::EN_SW_UPDATE_DATA:
-                        ///////////////////////////////////////
-                        {
-#ifdef DEBUG_FWUPDATE
-                            DBG( "Data" );
-#endif
-                            std::vector<int> sendData;
-                            sendData.push_back( MCUUpdateAction::EN_SW_UPDATE_DATA );
-                            for( unsigned int i = 0; i <= (unsigned int)totalRead; i++ )
-                            {
-                                sendData.push_back( binaryData[i] );
-                            }
-                            mcuUpdateState = MCUUpdateAction::EN_SW_UPDATE_IDLE;
-                            hwMessage.data = sendData;
-
-                            contracts::DclSignals::createAndSendCommandToDcl( hwMessage );
-
-                            currentPos += 1;
-                            // Update the progres bar
-                            data.command_status = mt::RECOVERY_STATUS::RUN;
-                            data.nsteps         = linuxsteps; //last step
-                            data.curstep        = linuxsteps;
-                            double _progress    = ( (float)currentPos / (float)fileSize ) * 100;
-
-                            // Calculate the remaining percentage
-                            double remainingPercentage = 100.0 - linuxPercentage;
-
-                            // Calculate the remaining percentage based on _progress
-                            double remainingFromProgress = remainingPercentage * ( _progress / 100.0 );
-
-                            // Update total progress by adding the remaining percentage from _progress
-                            totalProgress = linuxPercentage + remainingFromProgress;
-
-                            data.totalper = totalProgress;
-
-#ifdef DEBUG_FWUPDATE
-                            DBG( "Linux Stpes -> " << linuxsteps );
-                            DBG( "remaining Percentage" << remainingPercentage );
-                            DBG( "remaining From Progress" << remainingFromProgress );
-                            DBG( "Total Progress with MCU " << totalProgress );
-#endif
-                            if( swupdateStatus )
-                                swupdateStatus( data );
-
-                            break;
-                        }
-                    ////////////////////////////////////////
-                    case MCUUpdateAction::EN_SW_UPDATE_DATABASE:
-                        ///////////////////////////////////////
-                        {
-#ifdef DEBUG_FWUPDATE
-                            DBG( "DataBase" );
-#endif
-                            std::vector<int> sendBaseData;
-                            sendBaseData.push_back( MCUUpdateAction::EN_SW_UPDATE_DATABASE );
-                            for( unsigned int i = 0; i < 2; i++ )
-                            {
-                                sendBaseData.push_back( (int)binaryData[i] );
-                            }
-                            hwMessage.data = sendBaseData;
-                            mcuUpdateState = MCUUpdateAction::EN_SW_UPDATE_IDLE;
-                            contracts::DclSignals::createAndSendCommandToDcl( hwMessage );
-                            break;
-                        }
+                    }
+                ///////////////////////////////////
+                case MCUUpdateAction::EN_SW_UPDATE_FAILURE:
                     ///////////////////////////////////
-                    case MCUUpdateAction::EN_SW_UPDATE_END:
-                        ///////////////////////////////////
-                        {
-#ifdef DEBUG_FWUPDATE
-                            DBG( "SUCCESS -> END" );
-#endif
-                            std::vector<int> sendBaseData;
-                            sendBaseData.push_back( MCUUpdateAction::EN_SW_UPDATE_END );
-                            hwMessage.data = sendBaseData;
-                            contracts::DclSignals::createAndSendCommandToDcl( hwMessage );
-                            boUpdateComplete       = true;
-                            boSwUpdateStartUpCheck = false;
-                            boDataTransferPending  = false;
-                            mcuUpdateState         = MCUUpdateAction::EN_SW_UPDATE_IDLE;
-                            SwUpdateSuccess        = 1;
-                            data.command_status    = mt::RECOVERY_STATUS::SUCCESS;
-                            data.totalper          = 100.0;
-                            if( swupdateStatus )
-                                swupdateStatus( data );
-
-                            break;
-                        }
-                    ///////////////////////////////////
-                    case MCUUpdateAction::EN_SW_UPDATE_ACK:
-                        ///////////////////////////////////
-                        {
-#ifdef DEBUG_FWUPDATE
-                            DBG( "Ack" );
-#endif
-                            totalRead      = parser.readNext( binaryData );
-                            mcuUpdateState = getMcuUpdateState( totalRead );
-
-                            break;
-                        }
-                    ///////////////////////////////////
-                    case MCUUpdateAction::EN_SW_UPDATE_IDLE:
-                        ///////////////////////////////////
-                        {
-                            //DBG("Idle");
-                            break;
-                        }
-                    ///////////////////////////////////
-                    case MCUUpdateAction::EN_SW_UPDATE_FAILURE:
-                        ///////////////////////////////////
-                        {
-                            SwUpdateSuccess        = -1;
-                            boSwUpdateStartUpCheck = false;
-                            boDataTransferPending  = false;
-                            data.command_status    = mt::RECOVERY_STATUS::FAILURE;
-                            if( swupdateStatus )
-                                swupdateStatus( data );
-                            DBG( "Failure" );
-                            break;
-                        }
-                }
+                    {
+                        finishTransfer();
+                        SwUpdateSuccess     = -1;
+                        data.command_status = mt::RECOVERY_STATUS::FAILURE;
+                        if( swupdateStatus )
+                            swupdateStatus( data );
+                        DBG( "Failure" );
+                        break;
+                    }
             }
         }
         return SwUpdateSuccess;
+    }
+
+    void FirmwareUpdate::armWait( juce::uint32 budgetMs )
+    {
+        waitStartMs  = juce::Time::getMillisecondCounter();
+        waitBudgetMs = budgetMs;
+    }
+
+    // Ends the current transfer, successful or not, so the next MCUUpdate() call starts from scratch.
+    void FirmwareUpdate::finishTransfer()
+    {
+        boUpdateComplete       = ( mcuUpdateState != MCUUpdateAction::EN_SW_UPDATE_FAILURE );
+        boSwUpdateStartUpCheck = false;
+        boDataTransferPending  = false;
+        mcuUpdateState         = MCUUpdateAction::EN_SW_UPDATE_IDLE;
     }
 
     void FirmwareUpdate::HexParser::AddPath( const juce::String& filePath )
@@ -334,7 +359,7 @@ namespace mt
         {
 #ifdef PREF_DBG
             DBG( "failed to open firmware file" );
-#endif()
+#endif
         }
     }
 
@@ -347,72 +372,89 @@ namespace mt
         return false;
     }
 
-    int FirmwareUpdate::HexParser::readNext( char redData[] )
+    bool FirmwareUpdate::HexParser::readHexByte( int& value )
     {
-        if( !fileStream->getStatus().wasOk() || fileStream->isExhausted() )
-            return -1;
+        char digits[2] = { 0 };
+        if( fileStream->read( digits, 2 ) != 2 )
+            return false;
 
-        char tmp = fileStream->readByte();
-        while( tmp == '\r' || tmp == '\n' )
-            tmp = fileStream->readByte();
+        const int hi = juce::CharacterFunctions::getHexDigitValue( (juce::juce_wchar)digits[0] );
+        const int lo = juce::CharacterFunctions::getHexDigitValue( (juce::juce_wchar)digits[1] );
+        if( hi < 0 || lo < 0 )
+            return false;
 
-        if( tmp != ':' )
-            jassertfalse;
+        value = ( hi << 4 ) | lo;
+        return true;
+    }
 
-        // total bytes
-        char tempData[5] = { 0 };
-        fileStream->read( tempData, 2 );
-        int totalDataBytes = juce::String( tempData ).getHexValue32();
+    int FirmwareUpdate::HexParser::readNext( char redData[], int capacity )
+    {
+        if( !fileStream || !fileStream->getStatus().wasOk() )
+            return parseError;
 
-        // read two bytes address
-        memset( tempData, 0, sizeof( tempData ) );
-        fileStream->read( tempData, 2 );
-        redData[0] = (char)juce::String( tempData ).getHexValue32();
-
-        memset( tempData, 0, sizeof( tempData ) );
-        fileStream->read( tempData, 2 );
-        redData[1] = (char)juce::String( tempData ).getHexValue32();
-
-        //RECORD TYPE
-        memset( tempData, 0, sizeof( tempData ) );
-        fileStream->read( tempData, 2 );
-        int recordType = juce::String( tempData ).getHexValue32();
-
-        // No need to read, if not data. end of data
-        if( totalDataBytes == 0 && recordType == 1 )
-            return -1;
-
-        if( recordType == 4 )
+        // Record types 02, 03 and 05 carry nothing the MCU is sent, so they are consumed here and the
+        // next record is returned instead.
+        for( ;; )
         {
-            // read data + checksum to forward the stream to next line
-            for( int i = 0; i < totalDataBytes; i++ )
+            if( fileStream->isExhausted() )
+                return -1;
+
+            char tmp = fileStream->readByte();
+            while( tmp == '\r' || tmp == '\n' )
             {
-                memset( tempData, 0, sizeof( tempData ) );
-                fileStream->read( tempData, 2 );
-                redData[i] = (char)juce::String( tempData ).getHexValue32();
+                if( fileStream->isExhausted() )
+                    return -1;
+                tmp = fileStream->readByte();
             }
-            // read checksum
-            fileStream->read( tempData, 2 );
 
-            return -2;
-        }
-        if( recordType != 0 )
-        {
-            // read data + checksum to forward the stream to next line
-            fileStream->read( tempData, totalDataBytes * 2 + 2 );
-            return 0;
-        }
+            if( tmp != ':' )
+                return parseError;
 
-        for( int i = 0; i < totalDataBytes; i++ )
-        {
-            memset( tempData, 0, sizeof( tempData ) );
-            fileStream->read( tempData, 2 );
-            redData[i + 2] = (char)juce::String( tempData ).getHexValue32();
-        }
-        // read checksum
-        fileStream->read( tempData, 2 );
+            // The record checksum is the two's complement of the sum of every byte before it.
+            int len = 0, addrHi = 0, addrLo = 0, recordType = 0;
+            if( !readHexByte( len ) || !readHexByte( addrHi ) || !readHexByte( addrLo ) || !readHexByte( recordType ) )
+                return parseError;
 
-        return totalDataBytes + 2;
+            int sum = len + addrHi + addrLo + recordType;
+
+            std::array<char, 255> payload{};
+            for( int i = 0; i < len; i++ )
+            {
+                int b = 0;
+                if( !readHexByte( b ) )
+                    return parseError;
+                payload[(size_t)i] = (char)b;
+                sum += b;
+            }
+
+            int checksum = 0;
+            if( !readHexByte( checksum ) || ( ( sum + checksum ) & 0xFF ) != 0 )
+                return parseError;
+
+            switch( recordType )
+            {
+                case 0: // data
+                    if( len + 2 > capacity )
+                        return parseError;
+                    redData[0] = (char)addrHi;
+                    redData[1] = (char)addrLo;
+                    std::memcpy( redData + 2, payload.data(), (size_t)len );
+                    return len + 2;
+
+                case 1: // end of file
+                    return len == 0 ? -1 : parseError;
+
+                case 4: // extended linear address (upper 16 bits)
+                    if( len != 2 || capacity < 2 )
+                        return parseError;
+                    redData[0] = payload[0];
+                    redData[1] = payload[1];
+                    return -2;
+
+                default: // 02, 03, 05: not sent to the MCU
+                    break;
+            }
+        }
     }
 
     juce::int64 FirmwareUpdate::HexParser::getSize()

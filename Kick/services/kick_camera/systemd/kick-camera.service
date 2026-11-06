@@ -1,0 +1,61 @@
+# Copyright (c) 2024 MUSIC Tribe
+#
+# This file is part of Kick.
+#
+# Kick is free software: you can redistribute it and/or modify it under the
+# terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, either version 3 of the License, or (at your option)
+# any later version.
+#
+# Kick is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+# more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with Kick. If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# /
+[Unit]
+Description=KICK camera capture (camera stays off until enabled)
+# The Kick app owns the audio engine. Start after it so camera start-up never delays the instrument.
+After=ktkick.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/kick-camera --config /etc/kick-camera.conf
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=5
+
+# Keep capture out of the audio engine's way. These numbers are a first guess:
+#  - CPUAffinity=3 assumes the audio threads are not pinned to core 3. Check the real pinning on the unit.
+#  - CPUQuota is a ceiling of 10% of one core. The goal for capture alone at 320x240 15 fps is under 5%.
+Nice=10
+CPUAffinity=3
+CPUWeight=10
+CPUQuota=10%
+IOWeight=10
+MemorySwapMax=0
+MemoryMax=64M
+
+# Privacy: this service has no network at all. It talks to the rest of the system over a Unix socket and
+# shared memory, and it can only write to /run and /dev/shm.
+PrivateNetwork=yes
+IPAddressDeny=any
+RestrictAddressFamilies=AF_UNIX
+ProtectSystem=strict
+ReadWritePaths=/run /dev/shm
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+# Video nodes only.
+DevicePolicy=closed
+DeviceAllow=char-video4linux rw
+
+[Install]
+WantedBy=multi-user.target

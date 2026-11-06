@@ -42,4 +42,5 @@
 #include "logger/logger.cpp"
 #include "main/system_ipc_helpers.cpp"
 #include "main/system_signals.cpp"
+#include "gesture/gesture_signals.cpp"
 

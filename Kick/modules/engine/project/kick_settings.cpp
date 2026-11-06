@@ -49,6 +49,7 @@ namespace mt
             cvclib.setup( getState().getOrCreateChildWithName( IDs::PREFCVCLIB, nullptr ), nullptr );
             metronome.setup( getState().getOrCreateChildWithName( IDs::METRONOME, nullptr ), nullptr );
             wifi.setup( getState().getOrCreateChildWithName( IDs::WIFI, nullptr ), nullptr );
+            gesture.setup( getState().getOrCreateChildWithName( IDs::GESTURE, nullptr ), nullptr );
         };
 
         auto settingsFile = getAppDirs( MTPrefs ).getChildFile( __settingsFileName );
@@ -385,6 +386,20 @@ namespace mt
     }
 
     bool KickWifi::isValid() { return vTree.hasType( IDs::WIFI ); }
+
+    /// ///////////////////////////////////
+    ///    KickGesture .
+    /// ///////////////////////////////////
+    void KickGesture::setup( juce::ValueTree VT, juce::UndoManager* Undo )
+    {
+        setupBase( VT, Undo );
+
+        enabled.attachTo( vTree, IDs::gestureenabled, Undo, false );
+        sensitivity.attachTo( vTree, IDs::gesturesensitivity, Undo, 5 );
+        mapping.attachTo( vTree, IDs::gesturemapping, Undo, "" );
+    }
+
+    bool KickGesture::isValid() { return vTree.hasType( IDs::GESTURE ); }
 
     /// ///////////////////////////////////
     ///    KickPreview .

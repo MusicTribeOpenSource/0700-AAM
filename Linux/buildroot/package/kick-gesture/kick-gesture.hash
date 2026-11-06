@@ -1,0 +1,8 @@
+# Locally computed on 2026-11-01 from the files themselves. They match cmake/pins.cmake and models/MODELS.md in
+# Kick/services/kick_gesture, and tools/check_pins.py keeps those two in step.
+# ONNX Runtime 1.24.4 prebuilt archives (MIT)
+sha256  866109a9248d057671a039b9d725be4bd86888e3754140e6701ec621be9d4d7e  onnxruntime-linux-aarch64-1.24.4.tgz
+sha256  3a211fbea252c1e66290658f1b735b772056149f28321e71c308942cdb54b747  onnxruntime-linux-x64-1.24.4.tgz
+# OpenCV Zoo MediaPipe hand models, int8 (Apache-2.0)
+sha256  9f014de96ef5b6816b3eb9a5fed21a7371ef0f104ea440aa19ce9129fe2af5f6  palm_detection_mediapipe_2023feb_int8.onnx
+sha256  e97bc1fb83b641954d33424c82b6ade719d0f73250bdb91710ecfd5f7b47e321  handpose_estimation_mediapipe_2023feb_int8.onnx

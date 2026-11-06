@@ -55,8 +55,8 @@ namespace AudIO
         bool m_mute{ false };
         bool m_stereo{ true };
 
-        std::atomic<bool> inMeterEnabled;
-        std::atomic<bool> outMeterEnabled;
+        std::atomic<bool> inMeterEnabled{ false };
+        std::atomic<bool> outMeterEnabled{ false };
 
         RampedParameter<float> m_bypassGain{ 1.0f };
         RampedParameter<float> m_muteGain{ 1.0f };

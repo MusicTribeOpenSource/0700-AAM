@@ -27,6 +27,16 @@ option( KICK_MULTITOUCH "KICK Multitouch demo App" OFF )
 option( DEBUG_TOUCH "Enable mouse cursor" OFF )
 option( USE_ASAN_KICK "enable address sanitizer" OFF )
 option( PERFETTO "Enable tracing using Perfetto" OFF )
+option( KICK_EMU "Build the Kick app for the desktop emulator (emu/)" OFF )
+
+if(KICK_EMU)
+    set(KICK_EMU_DIR ${CMAKE_SOURCE_DIR}/../emu CACHE PATH "Emulator support directory")
+    add_compile_definitions(KICK_EMU=1)
+    include_directories(${KICK_EMU_DIR}/modules/kick_emu)
+    # The emulator only needs the device binary. The timestamp helper forces a
+    # rebuild of everything on every build, so it stays off here.
+    set(TIMESTAMP OFF CACHE BOOL "" FORCE)
+endif()
 
 #Compile commands, useful for some IDEs like VS-Code
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
@@ -79,11 +89,12 @@ if(APPLE)
 endif(APPLE)
 
 # Compile with werror in release builds
-if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+# clang-cl reports "Clang" but takes MSVC-style flags, so it goes down the MSVC branch.
+if (NOT MSVC AND (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU"))
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -Wno-unknown-pragmas -ffast-math -Ofast" )
     ## set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto -stdlib=libc++ -funroll-loops -ftree-vectorize -fvectorize")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ")
-elseif (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+elseif (MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE INTERNAL "")
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
     add_compile_options(

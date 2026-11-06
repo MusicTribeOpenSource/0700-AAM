@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# A session that makes the unmodified Kick host drive the LEDs, recorded to emu/tests/traces/leds.trace.
+#
+#   KICK_EMU_TRACE=emu/tests/traces/leds.trace KICK_EMU_LEDS_DUMP=... emu/run.sh --script emu/tests/leds-session.script
+#
+# It moves through screens (each sets and clears a button LED), changes bank (radio group), starts
+# and stops the transport, moves the touch strip and strikes pads, so the trace holds LED, PAD and
+# SLIDER traffic from the real app. Firmware/kick-mcu replays the trace and compares its LED table
+# with the Surface's.
+expect connected
+wait 24000
+pad 1 100 200
+wait 1500
+button Pad Mix
+wait 2500
+button Track Mix
+wait 2500
+button Pad Mute
+wait 2500
+button Track Mute
+wait 2500
+button Next Seq
+wait 2500
+button Step Seq
+wait 2500
+button Bank C
+wait 1500
+button Bank F
+wait 1500
+button Menu
+wait 2500
+button Main
+wait 2500
+button Bank A
+wait 1500
+slider 40
+wait 800
+knob 1 3
+wait 800
+button Full Level
+wait 1500
+button Half Level
+wait 1500
+button Play
+wait 1500
+button Stop
+wait 1500
+pad 6 90 200
+wait 1500
+quit

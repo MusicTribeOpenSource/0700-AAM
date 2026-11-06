@@ -5,6 +5,16 @@
 
 namespace kick_ui
 {
+    namespace
+    {
+        // Only ids below BtnLedSequence::SIZE have a button LED on the panel. The enum also carries
+        // EN_COLOR_EDIT (54), which is a screen id with no LED, and EN_INVALID_ID (-1).
+        bool hasButtonLed( contracts::DeviceControlContracts::BtnLedSequence id )
+        {
+            return id >= 0 && id < contracts::DeviceControlContracts::BtnLedSequence::SIZE;
+        }
+    } // namespace
+
     KickLEDs::KickLEDs()
     {
         ae.addListener( this );
@@ -166,7 +176,7 @@ namespace kick_ui
                 case Screen::MenuPadPerform: {id = contracts::DeviceControlContracts::BtnLedSequence::EN_LOOPER ; break;}*/
                 default: break;
             }
-            if( id != contracts::DeviceControlContracts::BtnLedSequence::EN_INVALID )
+            if( hasButtonLed( id ) )
             {
                 auto msg = contracts::DclContractsHelper::setLEDONMessage( id );
                 contracts::DclSignals::sendCommandToDcl( msg );
@@ -240,7 +250,7 @@ namespace kick_ui
                 }
                 case Screen::MenuLooper:
                 {
-                    contracts::DeviceControlContracts::BtnLedSequence::EN_LOOPER;
+                    id = contracts::DeviceControlContracts::BtnLedSequence::EN_LOOPER;
                     break;
                 }
                 case Screen::MenuSampler:
@@ -267,7 +277,7 @@ namespace kick_ui
                 case Screen::MenuPadPerform: {id = contracts::DeviceControlContracts::BtnLedSequence::EN_LOOPER ; break;}*/
                 default: break;
             }
-            if( id != contracts::DeviceControlContracts::BtnLedSequence::EN_INVALID )
+            if( hasButtonLed( id ) )
             {
                 auto msg = contracts::DclContractsHelper::setLEDOFFMessage( id );
                 contracts::DclSignals::sendCommandToDcl( msg );

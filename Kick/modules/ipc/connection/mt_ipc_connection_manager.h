@@ -54,7 +54,7 @@ namespace ipc
 		void broadcast(std::shared_ptr<ipc::MTIPCJson> message);
 		void multicast(const std::vector<int>& connectionIds, std::shared_ptr<ipc::MTIPCJson> message);
 		bool isConnected(const int connectionId);
-		void startServer();
+		bool startServer();
 		void startClients();
 		void stop();
 		bool canAttemptReconnection(int connectionId);

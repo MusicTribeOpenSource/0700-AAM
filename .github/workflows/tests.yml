@@ -1,0 +1,70 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-integration:
+    name: unit + integration (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: plain
+            flags: ""
+          - name: asan-ubsan
+            flags: "-DKICK_SANITIZE=ON"
+          - name: tsan
+            flags: "-DKICK_TSAN=ON"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S tests -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug ${{ matrix.flags }}
+      - name: Build
+        run: cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --no-tests=error --timeout 120
+
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install gcovr
+        run: pip install gcovr
+      - name: Configure
+        run: cmake -S tests -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DKICK_COVERAGE=ON
+      - name: Build and test
+        run: |
+          cmake --build build
+          ctest --test-dir build --output-on-failure --no-tests=error --timeout 120
+      - name: Report
+        run: gcovr -r . --filter 'AudIO/' --filter 'ComProtocol/' --txt --xml coverage.xml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+
+  ui-e2e:
+    name: ui + e2e (macOS)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S tests -B build -G Ninja -DKICK_UI_TESTS=ON
+      - name: Build
+        run: cmake --build build
+      - name: Test
+        run: ctest --test-dir build -L "ui|e2e" --output-on-failure --no-tests=error --timeout 120

@@ -94,6 +94,10 @@ private:
     volatile uint8_t m_ui8TxFifoReadPos;
     uint8_t          m_ui8ArrTransmitBuffer[40];
 
+    // Bytes of the frame being received, from 'M' up to the last byte before the CRC.
+    // Per instance: a static here let one link's abandoned frame corrupt another's CRC.
+    std::vector<char> m_rxCrcBytes;
+
 public:
     void    PushByteToRxFifo( uint8_t f_ui8Data );
     uint8_t PopUint8FromRxFifo( void );
@@ -117,8 +121,8 @@ public:
         const uint16_t& f_ui16ByteTimeoutMs ///< Timeout for reception of one byte
     )
         : m_enComChannel( f_enComChannel )
-        , mc_ui8RxFifoSize( f_ui8RxFifoSize )
-        , mc_ui8TxFifoSize( f_ui8TxFifoSize )
+        , mc_ui8RxFifoSize( f_ui8RxFifoSize > 255 ? 255 : (uint8_t)f_ui8RxFifoSize )
+        , mc_ui8TxFifoSize( f_ui8TxFifoSize > 255 ? 255 : (uint8_t)f_ui8TxFifoSize )
         , m_ptrui8RxFifo( f_ptrui8RxFifo )
         , m_ptrui8TxFifo( f_ptrui8TxFifo )
     {}

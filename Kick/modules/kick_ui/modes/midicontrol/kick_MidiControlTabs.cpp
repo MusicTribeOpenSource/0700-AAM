@@ -1,5 +1,12 @@
 namespace kick_ui
 {
+    namespace
+    {
+        // Pad state the MCU sends for a pressure change on a held pad (Firmware/kick-mcu contract.h,
+        // kPadStateAftertouch). It is not a note-on or a note-off.
+        constexpr int padStatePressureUpdate = 2;
+    } // namespace
+
 
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     /////////////////////////////////////////////////// MidiControlHardware-right1 ///////////////////////////////////////
@@ -1449,7 +1456,7 @@ namespace kick_ui
                         noteOnMessage = juce::MidiMessage::noteOn( midiChannel, padNote, velocityValue );
                         sendMidiMassages( noteOnMessage );
                     }
-                    else
+                    else if( buttonState != padStatePressureUpdate )
                     {
                         noteOffMessage = juce::MidiMessage::noteOff( midiChannel, padNote, 0.0f );
                         sendMidiMassages( noteOffMessage );

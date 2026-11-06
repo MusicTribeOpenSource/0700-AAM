@@ -201,12 +201,15 @@ namespace ipc
         }
     }
 
-    void MTIPCConnectionManager::startServer()
+    bool MTIPCConnectionManager::startServer()
     {
-        if( data->server )
-        {
-            data->server->start();
-        }
+        if( !data->server )
+            return true;
+
+        const bool listening = data->server->start();
+        if( !listening )
+            DBG( "IPC server could not open its listening socket" );
+        return listening;
     }
 
     void MTIPCConnectionManager::startClients()

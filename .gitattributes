@@ -1,0 +1,5 @@
+# The JUCE multitouch patch must keep LF line endings or it will not apply on Windows.
+emu/patches/** text eol=lf
+*.patch text eol=lf
+# JUCE keeps CRLF in these sources, so this patch must stay byte-for-byte.
+emu/patches/juce_7.0.12_emu_kiosk.patch -text

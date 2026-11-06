@@ -1,0 +1,11 @@
+# Gestures are off by default, so a swipe must not change the bank. Run by emu/tests/run-gesture-test.sh without KICK_EMU_GESTURES.
+expect connected
+wait 24000
+button Enter
+wait 10000
+expect led Bank A on
+gesture swipe_right
+# Long enough for the app to have acted on the swipe if it were going to.
+wait 2000
+expect led Bank B off
+quit

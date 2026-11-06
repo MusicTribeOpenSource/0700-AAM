@@ -25,11 +25,46 @@
 #include "../modules/kick_ui_settings/source/kick_ui_settings_cv.h"
 #include "program_edit_ui/program_edit_ui.h"
 #include "contracts/dcl/dcl_signals.h"
+#include "contracts/gesture/gesture_signals.h"
 #include "contracts/dcl/dcl_contracts_helper.h"
 #include "contracts/utils/keyboard/keyboard_detector.h"
 
 namespace kick_ui
 {
+    // A small red dot with "CAM" that is visible only while the camera is capturing, so nobody is filmed without a sign
+    // on the screen. It never takes mouse clicks.
+    class CameraIndicator : public juce::Component
+    {
+    public:
+        CameraIndicator()
+        {
+            setInterceptsMouseClicks( false, false );
+            setVisible( false );
+        }
+
+        void setCapturing( bool capturing )
+        {
+            if( capturing == isVisible() )
+                return;
+            setVisible( capturing );
+            if( capturing )
+                toFront( false );
+        }
+
+        void paint( juce::Graphics& g ) override
+        {
+            auto b = getLocalBounds().toFloat();
+            g.setColour( juce::Colours::black.withAlpha( 0.55f ) );
+            g.fillRoundedRectangle( b, b.getHeight() * 0.5f );
+            const float d = b.getHeight() * 0.45f;
+            g.setColour( juce::Colour( 0xffe53935 ) );
+            g.fillEllipse( b.getX() + b.getHeight() * 0.3f, b.getCentreY() - d * 0.5f, d, d );
+            g.setColour( juce::Colours::white );
+            g.setFont( b.getHeight() * 0.5f );
+            g.drawText( "CAM", b.withTrimmedLeft( b.getHeight() * 0.85f ), juce::Justification::centredLeft, false );
+        }
+    };
+
     sigslot::signal<Screen> signals::sigScreenClose = {};
     sigslot::signal<Screen> signals::sigScreenOpen  = {};
     sigslot::signal<Screen> signals::onScreenLoaded = {};
@@ -202,6 +237,17 @@ namespace kick_ui
         setPaintingIsUnclipped( true );
         setSize( ui::appWidth, ui::appHeight );
 
+        // Camera indicator.
+        cameraIndicator_ = std::make_unique<CameraIndicator>();
+        addChildComponent( cameraIndicator_.get() );
+        cameraConnection_ = contracts::GestureSignals::cameraStatusChanged.connect( [this]( const contracts::CameraStatus& s ) {
+            cameraIndicator_->setCapturing( s.capturing );
+            // Screens are added lazily and sit above it otherwise.
+            if( s.capturing )
+                cameraIndicator_->toFront( false );
+        } );
+        resized();
+
         // Load default startup screen.
         //signals::sigScreenOpen( Screen::Temp );
         signals::sigScreenOpen( Screen::RecentProject );
@@ -325,6 +371,8 @@ namespace kick_ui
             ctrlBar_->setBounds( b.removeFromTop( ui::layout::header.getHeight() ) );
             statusBar_->setBounds( b.removeFromBottom( ui::layout::statusBar.getHeight() ) );
         }
+        if( cameraIndicator_ )
+            cameraIndicator_->setBounds( bounds.getRight() - 76, 6, 68, 20 );
     }
 
     void KickHome::AssignSampleStartUp()

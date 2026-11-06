@@ -138,9 +138,13 @@ namespace ipc
 
         // if the all the clients are connected then start will not start the server
         // notify server about some clients being disconnected and then start.
-        void start()
+        // Returns false when the port could not be bound (already in use, bad address, no port configured).
+        bool start()
         {
-            beginWaitingForSocket( serverPort, bindAddress );
+            if( serverPort <= 0 )
+                return false;
+
+            return beginWaitingForSocket( serverPort, bindAddress );
         }
 
         bool areAllValidClientsConnected()
@@ -266,9 +270,9 @@ namespace ipc
 
     MTIPCSocketServer::~MTIPCSocketServer() { impl.reset(); };
 
-    void MTIPCSocketServer::start()
+    bool MTIPCSocketServer::start()
     {
-        impl->start();
+        return impl->start();
     }
 
     void MTIPCSocketServer::stop()
