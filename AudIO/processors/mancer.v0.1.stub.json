@@ -1,0 +1,23 @@
+{
+  "mancer_schema_version": "0.1",
+  "plugin_id": "org.surge-synth-team.surge-xt",
+  "license_notice": "SPDX-License-Identifier: AGPL-3.0-or-later | Commercial OEM Dual-License: Dream Maker 5 (@FYD5IVE) https://github.com/FYD5IVE",
+  "audiom_matrix_bindings": {
+    "bank_a_encoders": {
+      "X1": 0,
+      "Y1": 1,
+      "X2": 2,
+      "Y2": 3
+    },
+    "bank_b_encoders": {
+      "X3": 4,
+      "Y3": 5,
+      "X4": 6,
+      "Y4": 7
+    },
+    "expressive_bus": {
+      "touch_strip_param_id": 8,
+      "poly_aftertouch_mod_id": 9
+    }
+  }
+}
