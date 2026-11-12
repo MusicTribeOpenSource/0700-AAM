@@ -4,6 +4,7 @@
  * Project: Behringer KICK (0700-AAM) — Standalone CLAP Synth Workstation Host
  * Author: JJ Simmons / Dream Maker 5 (@FYD5IVE)
  * Copyright (C) 2026 Dream Maker 5 (@FYD5IVE). All Rights Reserved.
+ * Commercial Dual-Licensing Notice: https://github.com/FYD5IVE
  */
 
 #include "ClapInstrumentProcessor.hpp"
@@ -84,6 +85,10 @@ bool ClapInstrumentProcessor::loadPluginFromSdCard(const char* clapBinaryPath,
 
 void ClapInstrumentProcessor::unloadPlugin() noexcept {
     isActive_.store(false, std::memory_order_release);
+    cachedParamCount_.store(0, std::memory_order_release);
+    incomingEvents_.clear();
+    m_paramEventQueue.clear();
+
     if (plugin_) {
         plugin_->deactivate(plugin_);
         plugin_->destroy(plugin_);
@@ -102,18 +107,52 @@ void ClapInstrumentProcessor::unloadPlugin() noexcept {
 
 void ClapInstrumentProcessor::bindMacroParameters() noexcept {
     macroParamIds_.fill(CLAP_INVALID_ID);
+    cachedParamCount_.store(0, std::memory_order_release);
+
     paramsExt_ = static_cast<const clap_plugin_params_t*>(
         plugin_->get_extension(plugin_, CLAP_EXT_PARAMS));
     if (!paramsExt_) return;
 
-    const uint32_t count = paramsExt_->count(plugin_);
-    const uint32_t bindCount = std::min<uint32_t>(count, kNumMacros);
-    for (uint32_t i = 0; i < bindCount; ++i) {
+    const uint32_t rawCount = paramsExt_->count(plugin_);
+    const uint32_t cachedCount = std::min<uint32_t>(rawCount, static_cast<uint32_t>(kMaxCachedParams));
+    uint32_t validCount = 0;
+
+    for (uint32_t i = 0; i < cachedCount; ++i) {
         clap_param_info_t info{};
         if (paramsExt_->get_info(plugin_, i, &info)) {
-            macroParamIds_[i] = info.id;
+            cachedParamDescriptors_[validCount] = info;
+            if (validCount < kNumMacros) {
+                macroParamIds_[validCount] = info.id;
+            }
+            ++validCount;
         }
     }
+
+    cachedParamCount_.store(validCount, std::memory_order_release);
+}
+
+double ClapInstrumentProcessor::denormalizeParamValue(clap_id paramId, float normalized) const noexcept {
+    const float clamped = std::clamp(normalized, 0.0f, 1.0f);
+    const uint32_t count = cachedParamCount_.load(std::memory_order_relaxed);
+    for (uint32_t i = 0; i < count; ++i) {
+        const auto& desc = cachedParamDescriptors_[i];
+        if (desc.id == paramId) {
+            return desc.min_value + static_cast<double>(clamped) * (desc.max_value - desc.min_value);
+        }
+    }
+    return static_cast<double>(clamped);
+}
+
+double ClapInstrumentProcessor::scaleParamModAmount(clap_id paramId, float normalizedOffset) const noexcept {
+    const float clamped = std::clamp(normalizedOffset, -1.0f, 1.0f);
+    const uint32_t count = cachedParamCount_.load(std::memory_order_relaxed);
+    for (uint32_t i = 0; i < count; ++i) {
+        const auto& desc = cachedParamDescriptors_[i];
+        if (desc.id == paramId) {
+            return static_cast<double>(clamped) * (desc.max_value - desc.min_value);
+        }
+    }
+    return static_cast<double>(clamped);
 }
 
 uint32_t ClapInstrumentProcessor::clapInputEventsSize(const struct clap_input_events* list) noexcept {
@@ -132,7 +171,7 @@ void ClapInstrumentProcessor::processAudioBlock(const float* inLeft, const float
                                                 float* cvOut1, float* cvOut2,
                                                 float* cvOut3, float* cvOut4,
                                                 uint32_t numFrames) noexcept {
-    const uint32_t frames = std::min<uint32_t>(numFrames, kMaxBlockSize);
+    const uint32_t frames = std::min<uint32_t>(numFrames, static_cast<uint32_t>(kMaxBlockSize));
 
     if (!isActive_.load(std::memory_order_acquire) || !plugin_) {
         std::memset(outLeft, 0, frames * sizeof(float));
@@ -140,11 +179,9 @@ void ClapInstrumentProcessor::processAudioBlock(const float* inLeft, const float
         return;
     }
 
-    // 1. Drain lock-free ComProtocol / External MIDI queue into pre-allocated CLAP event list
+    // 1A. Drain ComProtocol / External MIDI hardware queue (0 bytes heap allocation)
     rtBlockEventCount_ = 0;
     KickHardwareSynthEvent hwEvt{};
-    float latestCvCutoff = 0.0f;
-    float latestCvResonance = 0.0f;
 
     while (rtBlockEventCount_ < kEventQueueCapacity && incomingEvents_.pop(hwEvt)) {
         auto& slot = rtBlockEvents_[rtBlockEventCount_];
@@ -182,11 +219,11 @@ void ClapInstrumentProcessor::processAudioBlock(const float* inLeft, const float
                     slot.paramValue.port_index = 0;
                     slot.paramValue.channel = -1;
                     slot.paramValue.key = -1;
-                    slot.paramValue.value = static_cast<double>(hwEvt.normalizedValue);
+                    slot.paramValue.value = denormalizeParamValue(paramId, hwEvt.normalizedValue);
                     ++rtBlockEventCount_;
                 }
-                if (macroIdx == 0) latestCvCutoff = hwEvt.normalizedValue;
-                if (macroIdx == 1) latestCvResonance = hwEvt.normalizedValue;
+                if (macroIdx == 0) lastCvCutoffNormalized_ = std::clamp(hwEvt.normalizedValue, 0.0f, 1.0f);
+                if (macroIdx == 1) lastCvResonanceNormalized_ = std::clamp(hwEvt.normalizedValue, 0.0f, 1.0f);
                 break;
             }
             case KickHardwareSynthEvent::Type::TouchStripMod:
@@ -204,11 +241,63 @@ void ClapInstrumentProcessor::processAudioBlock(const float* inLeft, const float
                     slot.paramMod.port_index = 0;
                     slot.paramMod.channel = -1;
                     slot.paramMod.key = -1;
-                    slot.paramMod.amount = static_cast<double>(hwEvt.normalizedValue);
+                    slot.paramMod.amount = scaleParamModAmount(targetParam, hwEvt.normalizedValue);
                     ++rtBlockEventCount_;
                 }
                 break;
             }
+        }
+    }
+
+    // 1B. Drain Layer 1 256-slot AudiomParamEvent SPSC ring buffer (0 bytes heap allocation)
+    AudiomParamEvent paramEvt{};
+    while (rtBlockEventCount_ < kEventQueueCapacity && m_paramEventQueue.pop(paramEvt)) {
+        clap_id resolvedId = paramEvt.paramId;
+        if (resolvedId == CLAP_INVALID_ID && paramEvt.macroSlot < kNumMacros) {
+            resolvedId = macroParamIds_[paramEvt.macroSlot];
+        }
+
+        const uint32_t clampedOffset = (frames > 0)
+            ? std::min<uint32_t>(paramEvt.sampleOffset, frames - 1)
+            : 0;
+
+        if (resolvedId != CLAP_INVALID_ID) {
+            auto& slot = rtBlockEvents_[rtBlockEventCount_];
+            if (paramEvt.isModulation != 0) {
+                slot.paramMod.header.size = sizeof(clap_event_param_mod_t);
+                slot.paramMod.header.time = clampedOffset;
+                slot.paramMod.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+                slot.paramMod.header.type = CLAP_EVENT_PARAM_MOD;
+                slot.paramMod.header.flags = 0;
+                slot.paramMod.param_id = resolvedId;
+                slot.paramMod.cookie = nullptr;
+                slot.paramMod.note_id = -1;
+                slot.paramMod.port_index = 0;
+                slot.paramMod.channel = paramEvt.channel;
+                slot.paramMod.key = paramEvt.key;
+                slot.paramMod.amount = scaleParamModAmount(resolvedId, paramEvt.normalizedValue);
+            } else {
+                slot.paramValue.header.size = sizeof(clap_event_param_value_t);
+                slot.paramValue.header.time = clampedOffset;
+                slot.paramValue.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+                slot.paramValue.header.type = CLAP_EVENT_PARAM_VALUE;
+                slot.paramValue.header.flags = 0;
+                slot.paramValue.param_id = resolvedId;
+                slot.paramValue.cookie = nullptr;
+                slot.paramValue.note_id = -1;
+                slot.paramValue.port_index = 0;
+                slot.paramValue.channel = paramEvt.channel;
+                slot.paramValue.key = paramEvt.key;
+                slot.paramValue.value = denormalizeParamValue(resolvedId, paramEvt.normalizedValue);
+            }
+            ++rtBlockEventCount_;
+        }
+
+        if ((paramEvt.cvTargetMask & 0x01u) || paramEvt.macroSlot == 0) {
+            lastCvCutoffNormalized_ = std::clamp(paramEvt.normalizedValue, 0.0f, 1.0f);
+        }
+        if ((paramEvt.cvTargetMask & 0x02u) || paramEvt.macroSlot == 1) {
+            lastCvResonanceNormalized_ = std::clamp(paramEvt.normalizedValue, 0.0f, 1.0f);
         }
     }
 
@@ -235,8 +324,8 @@ void ClapInstrumentProcessor::processAudioBlock(const float* inLeft, const float
 
     // 3. Drive 4x Hardware CV/Gate Outputs & Hybrid Analog VCF/VCA Return Loop
     if (cvOut1 && cvOut2) {
-        std::fill_n(cvOut1, frames, latestCvCutoff * 5.0f); // 0-5V Filter Cutoff CV
-        std::fill_n(cvOut2, frames, latestCvResonance * 5.0f); // 0-5V Filter Resonance CV
+        std::fill_n(cvOut1, frames, lastCvCutoffNormalized_ * 5.0f);    // 0-5V Filter Cutoff CV
+        std::fill_n(cvOut2, frames, lastCvResonanceNormalized_ * 5.0f); // 0-5V Filter Resonance CV
     }
     if (cvOut3 && cvOut4) {
         std::memset(cvOut3, 0, frames * sizeof(float));
